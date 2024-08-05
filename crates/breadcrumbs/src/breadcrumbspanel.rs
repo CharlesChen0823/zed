@@ -32,6 +32,7 @@ pub struct BreadCrumbsPanel {
     visible_entries: Vec<(WorktreeId, Vec<Entry>, OnceCell<HashSet<Arc<Path>>>)>,
     expanded_dir_ids: HashMap<WorktreeId, Vec<ProjectEntryId>>,
     // Currently selected entry in a file tree
+    current_entry: Option<(WorktreeId, ProjectEntryId)>,
     selection: Option<SelectedEntry>,
     workspace: WeakView<Workspace>,
     width: Option<Pixels>,
@@ -88,6 +89,7 @@ impl BreadCrumbsPanel {
                 focus_handle,
                 visible_entries: Default::default(),
                 expanded_dir_ids: Default::default(),
+                current_entry: None,
                 selection: None,
                 workspace: workspace.weak_handle(),
                 width: None,
@@ -626,13 +628,11 @@ impl BreadCrumbsPanel {
                         cx.stop_propagation();
 
                         if event.down.modifiers.secondary() {
-                            if event.down.click_count > 1 {
-                                this.split_entry(entry_id, cx);
-                            }
+                            this.split_entry(entry_id, cx);
                         } else if kind.is_dir() {
                             this.toggle_expanded(entry_id, cx);
                         } else {
-                            this.open_entry(entry_id, cx.modifiers().secondary(), false, cx);
+                            this.open_entry(entry_id, true, false, cx);
                         }
                     })),
             )
@@ -698,19 +698,6 @@ impl BreadCrumbsPanel {
                 .on_any_mouse_down(|_, cx| {
                     cx.stop_propagation();
                 })
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _, cx| {
-                        if this.scrollbar_drag_thumb_offset.get().is_none()
-                            && !this.focus_handle.contains_focused(cx)
-                        {
-                            this.hide_scrollbar(cx);
-                            cx.notify();
-                        }
-
-                        cx.stop_propagation();
-                    }),
-                )
                 .on_scroll_wheel(cx.listener(|_, _, cx| {
                     cx.notify();
                 }))
