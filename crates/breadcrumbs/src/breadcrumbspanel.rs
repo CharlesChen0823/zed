@@ -6,9 +6,8 @@ use client::{ErrorCode, ErrorExt};
 use collections::{hash_map, HashMap};
 use gpui::{
     div, px, uniform_list, AnyElement, AppContext, Div, EventEmitter, FocusHandle, FocusableView,
-    InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement, Render,
-    Stateful, Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _,
-    WeakView,
+    InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement, Render, Stateful,
+    Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _, WeakView,
 };
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
 use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, Worktree, WorktreeId};
@@ -22,10 +21,7 @@ use std::{
     sync::Arc,
 };
 use ui::{prelude::*, Icon, ListItem, Tooltip};
-use workspace::{
-    notifications::{DetachAndPromptErr},
-    SelectedEntry, Workspace,
-};
+use workspace::{notifications::DetachAndPromptErr, SelectedEntry, Workspace};
 
 pub struct BreadCrumbsPanel {
     project: Model<Project>,
@@ -381,8 +377,8 @@ impl BreadCrumbsPanel {
         let project = self.project.read(cx);
 
         self.visible_entries.clear();
-        let worktree = if let Some((worktree_id, _)) = self.current_entry {
-            project.worktree_for_id(worktree_id, cx).unwrap()
+        let (worktree, entry_id) = if let Some((worktree_id, entry_id)) = self.current_entry {
+            (project.worktree_for_id(worktree_id, cx).unwrap(), entry_id)
         } else {
             return;
         };
@@ -403,7 +399,9 @@ impl BreadCrumbsPanel {
         };
 
         let mut visible_worktree_entries = Vec::new();
-        let mut entry_iter = snapshot.entries(true, 0);
+        let entry = worktree.read(cx).entry_for_id(entry_id).unwrap();
+        let path = entry.path.parent().unwrap_or(worktree.abs_path());
+        let mut entries_iter = snapshot.child_entries(path);
         while let Some(entry) = entry_iter.entry() {
             visible_worktree_entries.push(entry.clone());
             if expanded_dir_ids.binary_search(&entry.id).is_err() && entry_iter.advance_to_sibling()
