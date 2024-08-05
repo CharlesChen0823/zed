@@ -31,7 +31,6 @@ pub struct BreadCrumbsPanel {
     focus_handle: FocusHandle,
     visible_entries: Vec<(WorktreeId, Vec<Entry>, OnceCell<HashSet<Arc<Path>>>)>,
     expanded_dir_ids: HashMap<WorktreeId, Vec<ProjectEntryId>>,
-    unfolded_dir_ids: HashSet<ProjectEntryId>,
     // Currently selected entry in a file tree
     selection: Option<SelectedEntry>,
     workspace: WeakView<Workspace>,
@@ -89,7 +88,6 @@ impl BreadCrumbsPanel {
                 focus_handle,
                 visible_entries: Default::default(),
                 expanded_dir_ids: Default::default(),
-                unfolded_dir_ids: Default::default(),
                 selection: None,
                 workspace: workspace.weak_handle(),
                 width: None,
@@ -103,7 +101,7 @@ impl BreadCrumbsPanel {
         });
 
         cx.subscribe(&breadcrumbs_panel, {
-            let project_panel = breadcrumbs_panel.downgrade();
+            let breadcrumbs_panel = breadcrumbs_panel.downgrade();
             move |workspace, _, event, cx| match event {
                 &Event::OpenedEntry {
                     entry_id,
@@ -115,10 +113,10 @@ impl BreadCrumbsPanel {
                             let worktree_id = worktree.read(cx).id();
                             let entry_id = entry.id;
 
-                            if let Some(breadcrumbs_panel) = project_panel.upgrade() {
+                            if let Some(breadcrumbs_panel) = breadcrumbs_panel.upgrade() {
                                 // Always select the entry, regardless of whether it is opened or not.
-                                breadcrumbs_panel.update(cx, |project_panel, _| {
-                                    project_panel.selection = Some(SelectedEntry {
+                                breadcrumbs_panel.update(cx, |breadcrumbs_panel, _| {
+                                    breadcrumbs_panel.selection = Some(SelectedEntry {
                                         worktree_id,
                                         entry_id,
                                     });
@@ -164,17 +162,14 @@ impl BreadCrumbsPanel {
     fn toggle_expanded(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
         if let Some(worktree_id) = self.project.read(cx).worktree_id_for_entry(entry_id, cx) {
             if let Some(expanded_dir_ids) = self.expanded_dir_ids.get_mut(&worktree_id) {
-                self.project.update(cx, |project, cx| {
-                    match expanded_dir_ids.binary_search(&entry_id) {
-                        Ok(ix) => {
-                            expanded_dir_ids.remove(ix);
-                        }
-                        Err(ix) => {
-                            project.expand_entry(worktree_id, entry_id, cx);
-                            expanded_dir_ids.insert(ix, entry_id);
-                        }
+                match expanded_dir_ids.binary_search(&entry_id) {
+                    Ok(ix) => {
+                        expanded_dir_ids.remove(ix);
                     }
-                });
+                    Err(ix) => {
+                        expanded_dir_ids.insert(ix, entry_id);
+                    }
+                }
                 self.update_visible_entries(Some((worktree_id, entry_id)), cx);
                 cx.focus(&self.focus_handle);
                 cx.notify();
@@ -422,8 +417,7 @@ impl BreadCrumbsPanel {
 
     fn confirm(&mut self, _: &Confirm, cx: &mut ViewContext<Self>) {
         if let Some((_, ref entry)) = self.selected_entry_handle(cx) {
-            let kind = &entry.kind;
-            if (&kind).is_dir() {
+            if entry.is_dir() {
                 self.toggle_expanded(entry.id, cx);
             } else {
                 self.open_entry(entry.id, true, false, cx);
@@ -442,7 +436,6 @@ impl BreadCrumbsPanel {
                 .worktree_for_id(worktree_id, cx)
                 .zip(self.expanded_dir_ids.get_mut(&worktree_id))
             {
-                project.expand_entry(worktree_id, entry_id, cx);
                 let worktree = worktree.read(cx);
 
                 if let Some(mut entry) = worktree.entry_for_id(entry_id) {
