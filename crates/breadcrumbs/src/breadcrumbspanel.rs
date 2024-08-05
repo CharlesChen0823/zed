@@ -371,40 +371,41 @@ impl BreadCrumbsPanel {
         let project = self.project.read(cx);
 
         self.visible_entries.clear();
-        for worktree in project.visible_worktrees(cx) {
-            let snapshot = worktree.read(cx).snapshot();
-            let worktree_id = snapshot.id();
+        let worktree = if let Some((worktree_id, _)) = self.current_entry {
+            project.worktree_for_id(worktree_id, cx).unwrap()
+        } else {
+            return;
+        };
+        let snapshot = worktree.read(cx).snapshot();
+        let worktree_id = snapshot.id();
 
-            let expanded_dir_ids = match self.expanded_dir_ids.entry(worktree_id) {
-                hash_map::Entry::Occupied(e) => e.into_mut(),
-                hash_map::Entry::Vacant(e) => {
-                    // The first time a worktree's root entry becomes available,
-                    // mark that root entry as expanded.
-                    if let Some(entry) = snapshot.root_entry() {
-                        e.insert(vec![entry.id]).as_slice()
-                    } else {
-                        &[]
-                    }
+        let expanded_dir_ids = match self.expanded_dir_ids.entry(worktree_id) {
+            hash_map::Entry::Occupied(e) => e.into_mut(),
+            hash_map::Entry::Vacant(e) => {
+                // The first time a worktree's root entry becomes available,
+                // mark that root entry as expanded.
+                if let Some(entry) = snapshot.root_entry() {
+                    e.insert(vec![entry.id]).as_slice()
+                } else {
+                    &[]
                 }
-            };
-
-            let mut visible_worktree_entries = Vec::new();
-            let mut entry_iter = snapshot.entries(true, 0);
-            while let Some(entry) = entry_iter.entry() {
-                visible_worktree_entries.push(entry.clone());
-                if expanded_dir_ids.binary_search(&entry.id).is_err()
-                    && entry_iter.advance_to_sibling()
-                {
-                    continue;
-                }
-                entry_iter.advance();
             }
+        };
 
-            project::sort_worktree_entries(&mut visible_worktree_entries);
-            self.visible_entries
-                .push((worktree_id, visible_worktree_entries, OnceCell::new()));
+        let mut visible_worktree_entries = Vec::new();
+        let mut entry_iter = snapshot.entries(true, 0);
+        while let Some(entry) = entry_iter.entry() {
+            visible_worktree_entries.push(entry.clone());
+            if expanded_dir_ids.binary_search(&entry.id).is_err() && entry_iter.advance_to_sibling()
+            {
+                continue;
+            }
+            entry_iter.advance();
         }
 
+        project::sort_worktree_entries(&mut visible_worktree_entries);
+        self.visible_entries
+            .push((worktree_id, visible_worktree_entries, OnceCell::new()));
         if let Some((worktree_id, entry_id)) = new_selected_entry {
             self.selection = Some(SelectedEntry {
                 worktree_id,
