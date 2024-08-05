@@ -1749,12 +1749,17 @@ dependencies = [
 name = "breadcrumbs"
 version = "0.1.0"
 dependencies = [
+ "collections",
  "editor",
+ "file_icons",
  "gpui",
  "itertools 0.11.0",
+ "menu",
  "outline",
+ "project",
  "theme",
  "ui",
+ "util",
  "workspace",
 ]
 

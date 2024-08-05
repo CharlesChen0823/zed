@@ -1,3 +1,5 @@
+mod breadcrumbsscrollbar;
+mod breadcrumbspanel;
 use editor::Editor;
 use gpui::{
     Element, EventEmitter, IntoElement, ParentElement, Render, StyledText, Subscription,
@@ -11,6 +13,7 @@ use workspace::{
     item::{BreadcrumbText, ItemEvent, ItemHandle},
     ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
 };
+use breadcrumbspanel::*;
 
 pub struct Breadcrumbs {
     pane_focused: bool,
