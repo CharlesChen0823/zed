@@ -2,11 +2,12 @@ use crate::breadcrumbsscrollbar::BreadCrumbsScrollbar;
 
 use file_icons::FileIcons;
 
+use client::{ErrorCode, ErrorExt};
 use collections::{hash_map, HashMap};
 use gpui::{
     div, px, uniform_list, AnyElement, AppContext, Div, EventEmitter, FocusHandle, FocusableView,
-    InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement, Pixels, Render,
-    Stateful, Styled, Task, UniformListScrollHandle, View, ViewContext, VisualContext as _,
+    InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement, Render,
+    Stateful, Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _,
     WeakView,
 };
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
@@ -21,7 +22,10 @@ use std::{
     sync::Arc,
 };
 use ui::{prelude::*, Icon, ListItem, Tooltip};
-use workspace::{SelectedEntry, Workspace};
+use workspace::{
+    notifications::{DetachAndPromptErr},
+    SelectedEntry, Workspace,
+};
 
 pub struct BreadCrumbsPanel {
     project: Model<Project>,
@@ -33,9 +37,7 @@ pub struct BreadCrumbsPanel {
     current_entry: Option<(WorktreeId, ProjectEntryId)>,
     selection: Option<SelectedEntry>,
     workspace: WeakView<Workspace>,
-    width: Option<Pixels>,
     scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
-    hide_scrollbar_task: Option<Task<()>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -65,7 +67,11 @@ pub enum Event {
 }
 
 impl BreadCrumbsPanel {
-    fn new(workspace: &mut Workspace, cx: &mut ViewContext<Workspace>) -> View<Self> {
+    fn new(
+        workspace: &mut Workspace,
+        current_entry: Option<(WorktreeId, ProjectEntryId)>,
+        cx: &mut ViewContext<Workspace>,
+    ) -> View<Self> {
         let project = workspace.project().clone();
         let breadcrumbs_panel = cx.new_view(|cx: &mut ViewContext<Self>| {
             let focus_handle = cx.focus_handle();
@@ -86,11 +92,9 @@ impl BreadCrumbsPanel {
                 focus_handle,
                 visible_entries: Default::default(),
                 expanded_dir_ids: Default::default(),
-                current_entry: None,
+                current_entry,
                 selection: None,
                 workspace: workspace.weak_handle(),
-                width: None,
-                hide_scrollbar_task: None,
                 scrollbar_drag_thumb_offset: Default::default(),
             };
             this.update_visible_entries(None, cx);
@@ -99,7 +103,6 @@ impl BreadCrumbsPanel {
         });
 
         cx.subscribe(&breadcrumbs_panel, {
-            let breadcrumbs_panel = breadcrumbs_panel.downgrade();
             move |workspace, _, event, cx| match event {
                 &Event::OpenedEntry {
                     entry_id,
@@ -109,22 +112,29 @@ impl BreadCrumbsPanel {
                     if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
                         if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
                             let worktree_id = worktree.read(cx).id();
-                            let entry_id = entry.id;
+                            let file_path = entry.path.clone();
 
-                            if let Some(breadcrumbs_panel) = breadcrumbs_panel.upgrade() {
-                                // Always select the entry, regardless of whether it is opened or not.
-                                breadcrumbs_panel.update(cx, |breadcrumbs_panel, _| {
-                                    breadcrumbs_panel.selection = Some(SelectedEntry {
+                            workspace
+                                .open_path_preview(
+                                    ProjectPath {
                                         worktree_id,
-                                        entry_id,
-                                    });
+                                        path: file_path.clone(),
+                                    },
+                                    None,
+                                    focus_opened_item,
+                                    true,
+                                    cx,
+                                )
+                                .detach_and_prompt_err("Failed to open file", cx, move |e, _| {
+                                    match e.error_code() {
+                                        ErrorCode::Disconnected => Some("Disconnected from remote project".to_string()),
+                                        ErrorCode::UnsharedItem => Some(format!(
+                                            "{} is not shared by the host. This could be because it has been marked as `private`",
+                                            file_path.display()
+                                        )),
+                                        _ => None,
+                                    }
                                 });
-                                if !focus_opened_item {
-                                    let focus_handle =
-                                        breadcrumbs_panel.read(cx).focus_handle.clone();
-                                    cx.focus(&focus_handle);
-                                }
-                            }
                         }
                     }
                 }

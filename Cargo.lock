@@ -1749,6 +1749,8 @@ dependencies = [
 name = "breadcrumbs"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "client",
  "collections",
  "editor",
  "file_icons",
