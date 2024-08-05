@@ -19,11 +19,9 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
-    time::Duration,
 };
 use ui::{prelude::*, Icon, ListItem, Tooltip};
-use util::ResultExt;
-use workspace::{dock::PanelEvent, SelectedEntry, Workspace};
+use workspace::{SelectedEntry, Workspace};
 
 pub struct BreadCrumbsPanel {
     project: Model<Project>,
@@ -36,7 +34,6 @@ pub struct BreadCrumbsPanel {
     selection: Option<SelectedEntry>,
     workspace: WeakView<Workspace>,
     width: Option<Pixels>,
-    show_scrollbar: bool,
     scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
     hide_scrollbar_task: Option<Task<()>>,
 }
@@ -93,7 +90,6 @@ impl BreadCrumbsPanel {
                 selection: None,
                 workspace: workspace.weak_handle(),
                 width: None,
-                show_scrollbar: !Self::should_autohide_scrollbar(cx),
                 hide_scrollbar_task: None,
                 scrollbar_drag_thumb_offset: Default::default(),
             };
@@ -662,7 +658,7 @@ impl BreadCrumbsPanel {
 
         let height = scroll_handle
             .last_item_height
-            .filter(|_| self.show_scrollbar || self.scrollbar_drag_thumb_offset.get().is_some())?;
+            .filter(|_| self.scrollbar_drag_thumb_offset.get().is_some())?;
 
         let total_list_length = height.0 as f64 * items_count as f64;
         let current_offset = scroll_handle.base_handle.offset().y.0.min(0.).abs() as f64;
@@ -717,28 +713,6 @@ impl BreadCrumbsPanel {
                 )),
         )
     }
-
-    fn should_autohide_scrollbar(cx: &AppContext) -> bool {
-        cx.should_auto_hide_scrollbars()
-    }
-
-    fn hide_scrollbar(&mut self, cx: &mut ViewContext<Self>) {
-        const SCROLLBAR_SHOW_INTERVAL: Duration = Duration::from_secs(1);
-        if !Self::should_autohide_scrollbar(cx) {
-            return;
-        }
-        self.hide_scrollbar_task = Some(cx.spawn(|panel, mut cx| async move {
-            cx.background_executor()
-                .timer(SCROLLBAR_SHOW_INTERVAL)
-                .await;
-            panel
-                .update(&mut cx, |panel, cx| {
-                    panel.show_scrollbar = false;
-                    cx.notify();
-                })
-                .log_err();
-        }))
-    }
 }
 
 impl Render for BreadCrumbsPanel {
@@ -752,17 +726,10 @@ impl Render for BreadCrumbsPanel {
         h_flex()
             .id("breadcrumbs-panel")
             .group("breadcrumbs-panel")
-            .size_full()
-            .relative()
-            .on_hover(cx.listener(|this, hovered, cx| {
-                if *hovered {
-                    this.show_scrollbar = true;
-                    this.hide_scrollbar_task.take();
-                    cx.notify();
-                } else if !this.focus_handle.contains_focused(cx) {
-                    this.hide_scrollbar(cx);
-                }
-            }))
+            .elevation_2(cx)
+            .overflow_y_scroll()
+            .max_w(px(100.0))
+            .max_h(px(100.0))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
             .on_action(cx.listener(Self::select_first))
@@ -788,8 +755,6 @@ impl Render for BreadCrumbsPanel {
 }
 
 impl EventEmitter<Event> for BreadCrumbsPanel {}
-
-impl EventEmitter<PanelEvent> for BreadCrumbsPanel {}
 
 impl FocusableView for BreadCrumbsPanel {
     fn focus_handle(&self, _cx: &AppContext) -> FocusHandle {
