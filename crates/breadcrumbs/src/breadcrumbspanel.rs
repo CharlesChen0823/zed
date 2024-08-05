@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
 };
 use ui::{prelude::*, Icon, ListItem, Tooltip};
-use workspace::{notifications::DetachAndPromptErr, SelectedEntry, Workspace};
+use workspace::{notifications::DetachAndPromptErr, Workspace};
 
 pub struct BreadCrumbsPanel {
     project: Model<Project>,
@@ -32,7 +32,7 @@ pub struct BreadCrumbsPanel {
     expanded_dir_ids: HashMap<WorktreeId, Vec<ProjectEntryId>>,
     // Currently selected entry in a file tree
     current_entry: ProjectEntryId,
-    selection: Option<SelectedEntry>,
+    selection: Option<ProjectEntryId>,
     workspace: WeakView<Workspace>,
     scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
 }
@@ -206,11 +206,7 @@ impl BreadCrumbsPanel {
             }
 
             let (worktree_id, worktree_entries, _) = &self.visible_entries[worktree_ix];
-            let selection = SelectedEntry {
-                worktree_id: *worktree_id,
-                entry_id: worktree_entries[entry_ix].id,
-            };
-            self.selection = Some(selection);
+            self.selection = Some(worktree_entries[entry_ix].id);
             self.autoscroll(cx);
             cx.notify();
         } else {
@@ -258,11 +254,7 @@ impl BreadCrumbsPanel {
             if let Some((worktree_id, worktree_entries, _)) = self.visible_entries.get(worktree_ix)
             {
                 if let Some(entry) = worktree_entries.get(entry_ix) {
-                    let selection = SelectedEntry {
-                        worktree_id: *worktree_id,
-                        entry_id: entry.id,
-                    };
-                    self.selection = Some(selection);
+                    self.selection = Some(entry.id);
 
                     self.autoscroll(cx);
                     cx.notify();
@@ -274,21 +266,11 @@ impl BreadCrumbsPanel {
     }
 
     fn select_first(&mut self, _: &SelectFirst, cx: &mut ViewContext<Self>) {
-        let worktree = self
-            .visible_entries
-            .first()
-            .and_then(|(worktree_id, _, _)| {
-                self.project.read(cx).worktree_for_id(*worktree_id, cx)
-            });
+        let worktree = self.project.read(cx).worktree_for_id(self.worktree_id, cx);
         if let Some(worktree) = worktree {
             let worktree = worktree.read(cx);
-            let worktree_id = worktree.id();
             if let Some(root_entry) = worktree.root_entry() {
-                let selection = SelectedEntry {
-                    worktree_id,
-                    entry_id: root_entry.id,
-                };
-                self.selection = Some(selection);
+                self.selection = Some(root_entry.id);
                 self.autoscroll(cx);
                 cx.notify();
             }
@@ -296,17 +278,11 @@ impl BreadCrumbsPanel {
     }
 
     fn select_last(&mut self, _: &SelectLast, cx: &mut ViewContext<Self>) {
-        let worktree = self.visible_entries.last().and_then(|(worktree_id, _, _)| {
-            self.project.read(cx).worktree_for_id(*worktree_id, cx)
-        });
+        let worktree = self.project.read(cx).worktree_for_id(self.worktree_id, cx);
         if let Some(worktree) = worktree {
             let worktree = worktree.read(cx);
-            let worktree_id = worktree.id();
             if let Some(last_entry) = worktree.entries(true, 0).last() {
-                self.selection = Some(SelectedEntry {
-                    worktree_id,
-                    entry_id: last_entry.id,
-                });
+                self.selection = Some(last_entry.id);
                 self.autoscroll(cx);
                 cx.notify();
             }
@@ -320,15 +296,15 @@ impl BreadCrumbsPanel {
         }
     }
 
-    fn index_for_selection(&self, selection: SelectedEntry) -> Option<(usize, usize, usize)> {
+    fn index_for_selection(&self, selection: ProjectEntryId) -> Option<(usize, usize, usize)> {
         let mut entry_index = 0;
         let mut visible_entries_index = 0;
         for (worktree_index, (worktree_id, worktree_entries, _)) in
             self.visible_entries.iter().enumerate()
         {
-            if *worktree_id == selection.worktree_id {
+            if *worktree_id == self.worktree_id {
                 for entry in worktree_entries {
-                    if entry.id == selection.entry_id {
+                    if entry.id == selection {
                         return Some((worktree_index, entry_index, visible_entries_index));
                     } else {
                         visible_entries_index += 1;
@@ -358,7 +334,7 @@ impl BreadCrumbsPanel {
         let selection = self.selection?;
         let project = self.project.read(cx);
         let worktree = project.worktree_for_id(self.worktree_id, cx)?;
-        let entry = worktree.read(cx).entry_for_id(selection.entry_id)?;
+        let entry = worktree.read(cx).entry_for_id(selection)?;
         Some((worktree, entry))
     }
 
@@ -421,10 +397,7 @@ impl BreadCrumbsPanel {
         self.visible_entries
             .push((worktree_id, visible_worktree_entries, OnceCell::new()));
         if let Some((worktree_id, entry_id)) = new_selected_entry {
-            self.selection = Some(SelectedEntry {
-                worktree_id,
-                entry_id,
-            });
+            self.selection = Some(entry_id);
         }
     }
 
@@ -536,10 +509,6 @@ impl BreadCrumbsPanel {
                             .map(|name| name.to_string_lossy().into_owned())
                             .unwrap_or_else(|| root_name.to_string_lossy().to_string()),
                     };
-                    let selection = SelectedEntry {
-                        worktree_id: snapshot.id(),
-                        entry_id: entry.id,
-                    };
                     let details = EntryDetails {
                         filename,
                         icon,
@@ -547,7 +516,7 @@ impl BreadCrumbsPanel {
                         depth,
                         kind: entry.kind,
                         is_expanded,
-                        is_selected: self.selection == Some(selection),
+                        is_selected: self.selection == Some(entry.id),
                         worktree_id: *worktree_id,
                         canonical_path: entry.canonical_path.clone(),
                     };
@@ -596,7 +565,7 @@ impl BreadCrumbsPanel {
         let kind = details.kind;
         let is_active = self
             .selection
-            .map_or(false, |selection| selection.entry_id == entry_id);
+            .map_or(false, |selection| selection == entry_id);
         let icon = details.icon.clone();
 
         let canonical_path = details
