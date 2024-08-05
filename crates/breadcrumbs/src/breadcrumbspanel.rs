@@ -27,10 +27,11 @@ pub struct BreadCrumbsPanel {
     project: Model<Project>,
     scroll_handle: UniformListScrollHandle,
     focus_handle: FocusHandle,
+    worktree_id: WorktreeId,
     visible_entries: Vec<(WorktreeId, Vec<Entry>, OnceCell<HashSet<Arc<Path>>>)>,
     expanded_dir_ids: HashMap<WorktreeId, Vec<ProjectEntryId>>,
     // Currently selected entry in a file tree
-    current_entry: Option<(WorktreeId, ProjectEntryId)>,
+    current_entry: ProjectEntryId,
     selection: Option<SelectedEntry>,
     workspace: WeakView<Workspace>,
     scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
@@ -65,10 +66,21 @@ pub enum Event {
 impl BreadCrumbsPanel {
     fn new(
         workspace: &mut Workspace,
-        current_entry: Option<(WorktreeId, ProjectEntryId)>,
+        target_path: PathBuf,
         cx: &mut ViewContext<Workspace>,
     ) -> View<Self> {
         let project = workspace.project().clone();
+        let project_path =
+            if let Some(project_path) = project.read(cx).find_project_path(&target_path, cx) {
+                project_path
+            } else {
+                return;
+            };
+        let entry = if let Some(entry) = project.read(cx).entry_for_path(&project_path.path, cx) {
+            entry
+        } else {
+            return;
+        };
         let breadcrumbs_panel = cx.new_view(|cx: &mut ViewContext<Self>| {
             let focus_handle = cx.focus_handle();
             cx.on_focus(&focus_handle, Self::focus_in).detach();
@@ -86,9 +98,10 @@ impl BreadCrumbsPanel {
                 project: project.clone(),
                 scroll_handle: UniformListScrollHandle::new(),
                 focus_handle,
+                worktree_id: project_path.worktree_id,
                 visible_entries: Default::default(),
                 expanded_dir_ids: Default::default(),
-                current_entry,
+                current_entry: entry.id,
                 selection: None,
                 workspace: workspace.weak_handle(),
                 scrollbar_drag_thumb_offset: Default::default(),
@@ -164,20 +177,18 @@ impl BreadCrumbsPanel {
     }
 
     fn toggle_expanded(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
-        if let Some(worktree_id) = self.project.read(cx).worktree_id_for_entry(entry_id, cx) {
-            if let Some(expanded_dir_ids) = self.expanded_dir_ids.get_mut(&worktree_id) {
-                match expanded_dir_ids.binary_search(&entry_id) {
-                    Ok(ix) => {
-                        expanded_dir_ids.remove(ix);
-                    }
-                    Err(ix) => {
-                        expanded_dir_ids.insert(ix, entry_id);
-                    }
+        if let Some(expanded_dir_ids) = self.expanded_dir_ids.get_mut(&self.worktree_id) {
+            match expanded_dir_ids.binary_search(&entry_id) {
+                Ok(ix) => {
+                    expanded_dir_ids.remove(ix);
                 }
-                self.update_visible_entries(Some((worktree_id, entry_id)), cx);
-                cx.focus(&self.focus_handle);
-                cx.notify();
+                Err(ix) => {
+                    expanded_dir_ids.insert(ix, entry_id);
+                }
             }
+            self.update_visible_entries(Some((worktree_id, entry_id)), cx);
+            cx.focus(&self.focus_handle);
+            cx.notify();
         }
     }
 
@@ -346,7 +357,7 @@ impl BreadCrumbsPanel {
     ) -> Option<(Model<Worktree>, &'a project::Entry)> {
         let selection = self.selection?;
         let project = self.project.read(cx);
-        let worktree = project.worktree_for_id(selection.worktree_id, cx)?;
+        let worktree = project.worktree_for_id(self.worktree_id, cx)?;
         let entry = worktree.read(cx).entry_for_id(selection.entry_id)?;
         Some((worktree, entry))
     }
@@ -377,15 +388,10 @@ impl BreadCrumbsPanel {
         let project = self.project.read(cx);
 
         self.visible_entries.clear();
-        let (worktree, entry_id) = if let Some((worktree_id, entry_id)) = self.current_entry {
-            (project.worktree_for_id(worktree_id, cx).unwrap(), entry_id)
-        } else {
-            return;
-        };
+        let worktree = project.worktree_for_id(self.worktree_id, cx).unwrap();
         let snapshot = worktree.read(cx).snapshot();
-        let worktree_id = snapshot.id();
 
-        let expanded_dir_ids = match self.expanded_dir_ids.entry(worktree_id) {
+        let expanded_dir_ids = match self.expanded_dir_ids.entry(self.worktree_id) {
             hash_map::Entry::Occupied(e) => e.into_mut(),
             hash_map::Entry::Vacant(e) => {
                 // The first time a worktree's root entry becomes available,
@@ -399,7 +405,7 @@ impl BreadCrumbsPanel {
         };
 
         let mut visible_worktree_entries = Vec::new();
-        let entry = worktree.read(cx).entry_for_id(entry_id).unwrap();
+        let entry = worktree.read(cx).entry_for_id(self.current_entry).unwrap();
         let path = entry.path.parent().unwrap_or(worktree.abs_path());
         let mut entries_iter = snapshot.child_entries(path);
         while let Some(entry) = entry_iter.entry() {
