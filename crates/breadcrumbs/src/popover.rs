@@ -298,20 +298,20 @@ impl Popover {
         cx: &mut ViewContext<Popover>,
         mut callback: impl FnMut(ProjectEntryId, EntryDetails, &mut ViewContext<Popover>),
     ) {
-        for (index, entry) in self.visible_entries.iter().enumerate() {
-            if index >= range.end || index <= range.start {
-                return;
-            }
-
-            if let Some(worktree) = self.project.read(cx).worktree_for_id(self.worktree_id, cx) {
-                let snapshot = worktree.read(cx).snapshot();
-                let root_name = OsStr::new(snapshot.root_name());
+        if let Some(worktree) = self.project.read(cx).worktree_for_id(self.worktree_id, cx) {
+            let snapshot = worktree.read(cx).snapshot();
+            let root_name = OsStr::new(snapshot.root_name());
+            for (index, entry) in self.visible_entries.iter().enumerate() {
+                if index >= range.end || index <= range.start {
+                    return;
+                }
 
                 let is_expanded = self.expanded_dir_ids.binary_search(&entry.id).is_ok();
                 let icon = match entry.kind {
                     EntryKind::File(_) => FileIcons::get_icon(&entry.path, cx),
                     _ => FileIcons::get_chevron_icon(is_expanded, cx),
                 };
+
                 let entries = self
                     .visible_entries
                     .iter()
