@@ -191,8 +191,6 @@ impl BreadCrumbsPanel {
             self.selection = Some(entry_id.id);
             self.autoscroll(cx);
             cx.notify();
-        } else {
-            self.select_first(&SelectFirst {}, cx);
         }
     }
 
@@ -223,43 +221,31 @@ impl BreadCrumbsPanel {
     fn select_next(&mut self, _: &SelectNext, cx: &mut ViewContext<Self>) {
         if let Some(selection) = self.selection {
             let mut entry_ix = self.index_for_selection(selection).unwrap_or_default();
-            if let Some(_) = self.visible_entries.get(entry_ix) {
-                if entry_ix + 1 < self.visible_entries.len() {
-                    entry_ix += 1;
-                } else {
-                    entry_ix = 0;
-                }
-                let entry = &self.visible_entries[entry_ix];
-                self.selection = Some(entry.id);
-                self.autoscroll(cx);
-                cx.notify();
+            if entry_ix + 1 < self.visible_entries.len() {
+                entry_ix += 1;
+            } else {
+                return;
             }
-        } else {
-            self.select_first(&SelectFirst {}, cx);
+            let entry = &self.visible_entries[entry_ix];
+            self.selection = Some(entry.id);
+            self.autoscroll(cx);
+            cx.notify();
         }
     }
 
     fn select_first(&mut self, _: &SelectFirst, cx: &mut ViewContext<Self>) {
-        let worktree = self.project.read(cx).worktree_for_id(self.worktree_id, cx);
-        if let Some(worktree) = worktree {
-            let worktree = worktree.read(cx);
-            if let Some(root_entry) = worktree.root_entry() {
-                self.selection = Some(root_entry.id);
-                self.autoscroll(cx);
-                cx.notify();
-            }
+        if let Some(entry) = self.visible_entries.first() {
+            self.selection = Some(entry.id);
+            self.autoscroll(cx);
+            cx.notify();
         }
     }
 
     fn select_last(&mut self, _: &SelectLast, cx: &mut ViewContext<Self>) {
-        let worktree = self.project.read(cx).worktree_for_id(self.worktree_id, cx);
-        if let Some(worktree) = worktree {
-            let worktree = worktree.read(cx);
-            if let Some(last_entry) = worktree.entries(true, 0).last() {
-                self.selection = Some(last_entry.id);
-                self.autoscroll(cx);
-                cx.notify();
-            }
+        if let Some(entry) = self.visible_entries.last() {
+            self.selection = Some(entry.id);
+            self.autoscroll(cx);
+            cx.notify();
         }
     }
 
@@ -279,23 +265,12 @@ impl BreadCrumbsPanel {
         None
     }
 
-    pub fn selected_entry<'a>(
-        &self,
-        cx: &'a AppContext,
-    ) -> Option<(&'a Worktree, &'a project::Entry)> {
-        let (worktree, entry) = self.selected_entry_handle(cx)?;
-        Some((worktree.read(cx), entry))
-    }
-
-    fn selected_entry_handle<'a>(
-        &self,
-        cx: &'a AppContext,
-    ) -> Option<(Model<Worktree>, &'a project::Entry)> {
+    fn selected_entry_handle<'a>(&self, cx: &'a AppContext) -> Option<&'a project::Entry> {
         let selection = self.selection?;
         let project = self.project.read(cx);
         let worktree = project.worktree_for_id(self.worktree_id, cx)?;
         let entry = worktree.read(cx).entry_for_id(selection)?;
-        Some((worktree, entry))
+        Some(entry)
     }
 
     fn update_visible_entries(
@@ -330,7 +305,7 @@ impl BreadCrumbsPanel {
     }
 
     fn confirm(&mut self, _: &Confirm, cx: &mut ViewContext<Self>) {
-        if let Some((_, ref entry)) = self.selected_entry_handle(cx) {
+        if let Some(entry) = self.selected_entry_handle(cx) {
             if entry.is_dir() {
                 self.toggle_expanded(entry.id, cx);
             } else {
