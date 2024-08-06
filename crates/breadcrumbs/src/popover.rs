@@ -48,13 +48,8 @@ pub struct EntryDetails {
 
 #[derive(Debug)]
 pub enum Event {
-    OpenedEntry {
-        entry_id: ProjectEntryId,
-        focus_opened_item: bool,
-    },
-    SplitEntry {
-        entry_id: ProjectEntryId,
-    },
+    OpenedEntry { entry_id: ProjectEntryId },
+    SplitEntry { entry_id: ProjectEntryId },
     Focus,
 }
 
@@ -99,7 +94,6 @@ impl Popover {
             move |workspace, _, event, cx| match event {
                 &Event::OpenedEntry {
                     entry_id,
-                    focus_opened_item,
                 } => {
                     if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
                         if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
@@ -113,7 +107,7 @@ impl Popover {
                                         path: file_path.clone(),
                                     },
                                     None,
-                                    focus_opened_item,
+                                    true,
                                     true,
                                     cx,
                                 )
@@ -193,16 +187,8 @@ impl Popover {
         cx.emit(DismissEvent);
     }
 
-    fn open_entry(
-        &mut self,
-        entry_id: ProjectEntryId,
-        focus_opened_item: bool,
-        cx: &mut ViewContext<Self>,
-    ) {
-        cx.emit(Event::OpenedEntry {
-            entry_id,
-            focus_opened_item,
-        });
+    fn open_entry(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
+        cx.emit(Event::OpenedEntry { entry_id });
     }
 
     fn split_entry(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
@@ -300,7 +286,7 @@ impl Popover {
             if entry.is_dir() {
                 self.toggle_expanded(entry.id, cx);
             } else {
-                self.open_entry(entry.id, true, cx);
+                self.open_entry(entry.id, cx);
                 cx.emit(DismissEvent);
             }
         }
@@ -332,8 +318,7 @@ impl Popover {
                     .map(|e| e.path.clone())
                     .collect();
 
-                let (depth, difference) =
-                    Popover::calculate_depth_and_difference(entry, &entries);
+                let (depth, difference) = Popover::calculate_depth_and_difference(entry, &entries);
 
                 let filename = match difference {
                     diff if diff > 1 => entry
@@ -450,7 +435,7 @@ impl Popover {
                         } else if kind.is_dir() {
                             this.toggle_expanded(entry_id, cx);
                         } else {
-                            this.open_entry(entry_id, true, cx);
+                            this.open_entry(entry_id, cx);
                         }
                     })),
             )
