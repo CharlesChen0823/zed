@@ -310,23 +310,6 @@ impl BreadCrumbsPanel {
         Some((worktree, entry))
     }
 
-    fn expand_to_selection(&mut self, cx: &mut ViewContext<Self>) -> Option<()> {
-        let (worktree, entry) = self.selected_entry(cx)?;
-
-        for path in entry.path.ancestors() {
-            let Some(entry) = worktree.entry_for_path(path) else {
-                continue;
-            };
-            if entry.is_dir() {
-                if let Err(idx) = self.expanded_dir_ids.binary_search(&entry.id) {
-                    self.expanded_dir_ids.insert(idx, entry.id);
-                }
-            }
-        }
-
-        Some(())
-    }
-
     fn update_visible_entries(
         &mut self,
         new_selected_entry: Option<ProjectEntryId>,
@@ -364,30 +347,6 @@ impl BreadCrumbsPanel {
                 self.open_entry(entry.id, true, false, cx);
             }
         }
-    }
-
-    fn expand_entry(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
-        self.project.update(cx, |project, cx| {
-            if let Some(worktree) = project.worktree_for_id(self.worktree_id, cx) {
-                let worktree = worktree.read(cx);
-
-                if let Some(mut entry) = worktree.entry_for_id(entry_id) {
-                    loop {
-                        if let Err(ix) = self.expanded_dir_ids.binary_search(&entry.id) {
-                            self.expanded_dir_ids.insert(ix, entry.id);
-                        }
-
-                        if let Some(parent_entry) =
-                            entry.path.parent().and_then(|p| worktree.entry_for_path(p))
-                        {
-                            entry = parent_entry;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
     }
 
     fn for_each_visible_entry(
