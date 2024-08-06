@@ -4,9 +4,9 @@ use file_icons::FileIcons;
 
 use client::{ErrorCode, ErrorExt};
 use gpui::{
-    div, px, uniform_list, AnyElement, AppContext, Div, EventEmitter, FocusHandle, FocusableView,
-    InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement, Render, Stateful,
-    Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _,
+    div, px, uniform_list, AnyElement, AppContext, DismissEvent, Div, EventEmitter, FocusHandle,
+    FocusableView, InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement,
+    Render, Stateful, Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _,
 };
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
 use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, WorktreeId};
@@ -190,9 +190,7 @@ impl BreadCrumbsPopover {
     }
 
     fn cancel(&mut self, _: &menu::Cancel, cx: &mut ViewContext<Self>) {
-        self.update_visible_entries(None, cx);
-        cx.focus(&self.focus_handle);
-        cx.notify();
+        cx.emit(DismissEvent);
     }
 
     fn open_entry(
@@ -303,6 +301,7 @@ impl BreadCrumbsPopover {
                 self.toggle_expanded(entry.id, cx);
             } else {
                 self.open_entry(entry.id, true, cx);
+                cx.emit(DismissEvent);
             }
         }
     }
@@ -574,6 +573,8 @@ impl Render for BreadCrumbsPopover {
 }
 
 impl EventEmitter<Event> for BreadCrumbsPopover {}
+
+impl EventEmitter<DismissEvent> for BreadCrumbsPopover {}
 
 impl FocusableView for BreadCrumbsPopover {
     fn focus_handle(&self, _cx: &AppContext) -> FocusHandle {
