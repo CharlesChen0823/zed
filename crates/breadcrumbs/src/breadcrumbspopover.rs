@@ -6,10 +6,10 @@ use client::{ErrorCode, ErrorExt};
 use gpui::{
     div, px, uniform_list, AnyElement, AppContext, Div, EventEmitter, FocusHandle, FocusableView,
     InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement, Render, Stateful,
-    Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _, WeakView,
+    Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _,
 };
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
-use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, Worktree, WorktreeId};
+use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, WorktreeId};
 use std::{
     cell::Cell,
     collections::HashSet,
@@ -22,17 +22,15 @@ use std::{
 use ui::{prelude::*, Icon, ListItem, Tooltip};
 use workspace::{notifications::DetachAndPromptErr, Workspace};
 
-pub struct BreadCrumbsPanel {
+pub struct BreadCrumbsPopover {
     project: Model<Project>,
     scroll_handle: UniformListScrollHandle,
     focus_handle: FocusHandle,
     worktree_id: WorktreeId,
     visible_entries: Vec<Entry>,
     expanded_dir_ids: Vec<ProjectEntryId>,
-    // Currently selected entry in a file tree
     current_entry: ProjectEntryId,
     selection: Option<ProjectEntryId>,
-    workspace: WeakView<Workspace>,
     scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
 }
 
@@ -53,7 +51,6 @@ pub enum Event {
     OpenedEntry {
         entry_id: ProjectEntryId,
         focus_opened_item: bool,
-        allow_preview: bool,
     },
     SplitEntry {
         entry_id: ProjectEntryId,
@@ -61,21 +58,21 @@ pub enum Event {
     Focus,
 }
 
-impl BreadCrumbsPanel {
-    fn new(
+impl BreadCrumbsPopover {
+    pub fn new(
         workspace: &mut Workspace,
-        target_path: ProjectPath,
+        target_path: PathBuf,
         cx: &mut ViewContext<Workspace>,
     ) -> View<Self> {
         let project = workspace.project().clone();
-        let entry = project.read(cx).entry_for_path(&target_path, cx).unwrap();
+        let project_path = project
+            .read(cx)
+            .find_project_path(&target_path, cx)
+            .unwrap();
+        let entry = project.read(cx).entry_for_path(&project_path, cx).unwrap();
         let breadcrumbs_panel = cx.new_view(|cx: &mut ViewContext<Self>| {
             let focus_handle = cx.focus_handle();
             cx.on_focus(&focus_handle, Self::focus_in).detach();
-            cx.on_focus_out(&focus_handle, |this, _, cx| {
-                // TODO should dismiss
-            })
-            .detach();
 
             cx.observe_global::<FileIcons>(|_, cx| {
                 cx.notify();
@@ -86,12 +83,11 @@ impl BreadCrumbsPanel {
                 project: project.clone(),
                 scroll_handle: UniformListScrollHandle::new(),
                 focus_handle,
-                worktree_id: target_path.worktree_id,
+                worktree_id: project_path.worktree_id,
                 visible_entries: Default::default(),
                 expanded_dir_ids: Default::default(),
                 current_entry: entry.id,
                 selection: None,
-                workspace: workspace.weak_handle(),
                 scrollbar_drag_thumb_offset: Default::default(),
             };
             this.update_visible_entries(None, cx);
@@ -104,7 +100,6 @@ impl BreadCrumbsPanel {
                 &Event::OpenedEntry {
                     entry_id,
                     focus_opened_item,
-                    ..
                 } => {
                     if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
                         if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
@@ -204,13 +199,11 @@ impl BreadCrumbsPanel {
         &mut self,
         entry_id: ProjectEntryId,
         focus_opened_item: bool,
-        allow_preview: bool,
         cx: &mut ViewContext<Self>,
     ) {
         cx.emit(Event::OpenedEntry {
             entry_id,
             focus_opened_item,
-            allow_preview,
         });
     }
 
@@ -309,7 +302,7 @@ impl BreadCrumbsPanel {
             if entry.is_dir() {
                 self.toggle_expanded(entry.id, cx);
             } else {
-                self.open_entry(entry.id, true, false, cx);
+                self.open_entry(entry.id, true, cx);
             }
         }
     }
@@ -317,15 +310,11 @@ impl BreadCrumbsPanel {
     fn for_each_visible_entry(
         &self,
         range: Range<usize>,
-        cx: &mut ViewContext<BreadCrumbsPanel>,
-        mut callback: impl FnMut(ProjectEntryId, EntryDetails, &mut ViewContext<BreadCrumbsPanel>),
+        cx: &mut ViewContext<BreadCrumbsPopover>,
+        mut callback: impl FnMut(ProjectEntryId, EntryDetails, &mut ViewContext<BreadCrumbsPopover>),
     ) {
         for (index, entry) in self.visible_entries.iter().enumerate() {
-            if index >= range.end {
-                return;
-            }
-
-            if index <= range.start {
+            if index >= range.end || index <= range.start {
                 return;
             }
 
@@ -345,7 +334,7 @@ impl BreadCrumbsPanel {
                     .collect();
 
                 let (depth, difference) =
-                    BreadCrumbsPanel::calculate_depth_and_difference(entry, &entries);
+                    BreadCrumbsPopover::calculate_depth_and_difference(entry, &entries);
 
                 let filename = match difference {
                     diff if diff > 1 => entry
@@ -462,7 +451,7 @@ impl BreadCrumbsPanel {
                         } else if kind.is_dir() {
                             this.toggle_expanded(entry_id, cx);
                         } else {
-                            this.open_entry(entry_id, true, false, cx);
+                            this.open_entry(entry_id, true, cx);
                         }
                     })),
             )
@@ -517,7 +506,7 @@ impl BreadCrumbsPanel {
         Some(
             div()
                 .occlude()
-                .id("breadcrumbs-panel-scroll")
+                .id("breadcrumbs-popover-scroll")
                 .on_mouse_move(cx.listener(|_, _, cx| {
                     cx.notify();
                     cx.stop_propagation()
@@ -549,13 +538,13 @@ impl BreadCrumbsPanel {
     }
 }
 
-impl Render for BreadCrumbsPanel {
+impl Render for BreadCrumbsPopover {
     fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
         let items_count = self.visible_entries.len();
 
-        h_flex()
-            .id("breadcrumbs-panel")
-            .group("breadcrumbs-panel")
+        div()
+            .id("breadcrumbs-popover")
+            .group("breadcrumbs-popover")
             .elevation_2(cx)
             .overflow_y_scroll()
             .max_w(px(100.0))
@@ -584,9 +573,9 @@ impl Render for BreadCrumbsPanel {
     }
 }
 
-impl EventEmitter<Event> for BreadCrumbsPanel {}
+impl EventEmitter<Event> for BreadCrumbsPopover {}
 
-impl FocusableView for BreadCrumbsPanel {
+impl FocusableView for BreadCrumbsPopover {
     fn focus_handle(&self, _cx: &AppContext) -> FocusHandle {
         self.focus_handle.clone()
     }
