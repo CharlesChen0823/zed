@@ -6,7 +6,7 @@ use gpui::{
 };
 use ui::{prelude::*, px, relative, IntoElement};
 
-pub(crate) struct BreadCrumbsScrollbar {
+pub(crate) struct Scrollbar {
     thumb: Range<f32>,
     scroll: UniformListScrollHandle,
     // If Some(), there's an active drag, offset by percentage from the top of thumb.
@@ -15,7 +15,7 @@ pub(crate) struct BreadCrumbsScrollbar {
     view: AnyView,
 }
 
-impl BreadCrumbsScrollbar {
+impl Scrollbar {
     pub(crate) fn new(
         thumb: Range<f32>,
         scroll: UniformListScrollHandle,
@@ -33,7 +33,7 @@ impl BreadCrumbsScrollbar {
     }
 }
 
-impl gpui::Element for BreadCrumbsScrollbar {
+impl gpui::Element for Scrollbar {
     type RequestLayoutState = ();
 
     type PrepaintState = Hitbox;
@@ -164,7 +164,7 @@ impl gpui::Element for BreadCrumbsScrollbar {
     }
 }
 
-impl IntoElement for BreadCrumbsScrollbar {
+impl IntoElement for Scrollbar {
     type Element = Self;
 
     fn into_element(self) -> Self::Element {

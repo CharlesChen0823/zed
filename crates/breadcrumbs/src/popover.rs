@@ -1,4 +1,4 @@
-use crate::breadcrumbsscrollbar::BreadCrumbsScrollbar;
+use crate::scrollbar::Scrollbar;
 
 use file_icons::FileIcons;
 
@@ -22,7 +22,7 @@ use std::{
 use ui::{prelude::*, Icon, ListItem, Tooltip};
 use workspace::{notifications::DetachAndPromptErr, Workspace};
 
-pub struct BreadCrumbsPopover {
+pub struct Popover {
     project: Model<Project>,
     scroll_handle: UniformListScrollHandle,
     focus_handle: FocusHandle,
@@ -58,7 +58,7 @@ pub enum Event {
     Focus,
 }
 
-impl BreadCrumbsPopover {
+impl Popover {
     pub fn new(
         workspace: &mut Workspace,
         target_path: PathBuf,
@@ -309,8 +309,8 @@ impl BreadCrumbsPopover {
     fn for_each_visible_entry(
         &self,
         range: Range<usize>,
-        cx: &mut ViewContext<BreadCrumbsPopover>,
-        mut callback: impl FnMut(ProjectEntryId, EntryDetails, &mut ViewContext<BreadCrumbsPopover>),
+        cx: &mut ViewContext<Popover>,
+        mut callback: impl FnMut(ProjectEntryId, EntryDetails, &mut ViewContext<Popover>),
     ) {
         for (index, entry) in self.visible_entries.iter().enumerate() {
             if index >= range.end || index <= range.start {
@@ -333,7 +333,7 @@ impl BreadCrumbsPopover {
                     .collect();
 
                 let (depth, difference) =
-                    BreadCrumbsPopover::calculate_depth_and_difference(entry, &entries);
+                    Popover::calculate_depth_and_difference(entry, &entries);
 
                 let filename = match difference {
                     diff if diff > 1 => entry
@@ -526,7 +526,7 @@ impl BreadCrumbsPopover {
                 .bottom_0()
                 .w(px(12.))
                 .cursor_default()
-                .child(BreadCrumbsScrollbar::new(
+                .child(Scrollbar::new(
                     percentage as f32..end_offset as f32,
                     self.scroll_handle.clone(),
                     self.scrollbar_drag_thumb_offset.clone(),
@@ -537,7 +537,7 @@ impl BreadCrumbsPopover {
     }
 }
 
-impl Render for BreadCrumbsPopover {
+impl Render for Popover {
     fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
         let items_count = self.visible_entries.len();
 
@@ -572,11 +572,11 @@ impl Render for BreadCrumbsPopover {
     }
 }
 
-impl EventEmitter<Event> for BreadCrumbsPopover {}
+impl EventEmitter<Event> for Popover {}
 
-impl EventEmitter<DismissEvent> for BreadCrumbsPopover {}
+impl EventEmitter<DismissEvent> for Popover {}
 
-impl FocusableView for BreadCrumbsPopover {
+impl FocusableView for Popover {
     fn focus_handle(&self, _cx: &AppContext) -> FocusHandle {
         self.focus_handle.clone()
     }

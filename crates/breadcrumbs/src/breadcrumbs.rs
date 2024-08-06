@@ -1,5 +1,5 @@
-mod breadcrumbsscrollbar;
-mod breadcrumbspopover;
+mod scrollbar;
+mod popover;
 use editor::Editor;
 use gpui::{
     Element, EventEmitter, IntoElement, ParentElement, Render, StyledText, Subscription,
@@ -13,7 +13,7 @@ use workspace::{
     item::{BreadcrumbText, ItemEvent, ItemHandle},
     ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
 };
-use breadcrumbspopover::*;
+use popover::*;
 
 pub struct Breadcrumbs {
     pane_focused: bool,
