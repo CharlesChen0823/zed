@@ -11,7 +11,7 @@ use gpui::{
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
 use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, Worktree, WorktreeId};
 use std::{
-    cell::{Cell, OnceCell},
+    cell::Cell,
     collections::HashSet,
     ffi::OsStr,
     ops::Range,
@@ -27,7 +27,7 @@ pub struct BreadCrumbsPanel {
     scroll_handle: UniformListScrollHandle,
     focus_handle: FocusHandle,
     worktree_id: WorktreeId,
-    visible_entries: Vec<(Vec<Entry>, OnceCell<HashSet<Arc<Path>>>)>,
+    visible_entries: Vec<Entry>,
     expanded_dir_ids: Vec<ProjectEntryId>,
     // Currently selected entry in a file tree
     current_entry: ProjectEntryId,
@@ -45,7 +45,6 @@ pub struct EntryDetails {
     kind: EntryKind,
     is_expanded: bool,
     is_selected: bool,
-    worktree_id: WorktreeId,
     canonical_path: Option<Box<Path>>,
 }
 
@@ -181,15 +180,15 @@ impl BreadCrumbsPanel {
 
     fn select_prev(&mut self, _: &SelectPrev, cx: &mut ViewContext<Self>) {
         if let Some(selection) = self.selection {
-            let (mut entry_ix, _) = self.index_for_selection(selection).unwrap_or_default();
+            let mut entry_ix = self.index_for_selection(selection).unwrap_or_default();
             if entry_ix > 0 {
                 entry_ix -= 1;
             } else {
                 return;
             }
 
-            let (worktree_entries, _) = &self.visible_entries[entry_ix];
-            self.selection = Some(worktree_entries[entry_ix].id);
+            let entry_id = &self.visible_entries[entry_ix];
+            self.selection = Some(entry_id.id);
             self.autoscroll(cx);
             cx.notify();
         } else {
@@ -223,22 +222,17 @@ impl BreadCrumbsPanel {
 
     fn select_next(&mut self, _: &SelectNext, cx: &mut ViewContext<Self>) {
         if let Some(selection) = self.selection {
-            let (mut entry_ix, _) = self.index_for_selection(selection).unwrap_or_default();
-            if let Some((worktree_entries, _)) = self.visible_entries.get(entry_ix) {
-                if entry_ix + 1 < worktree_entries.len() {
+            let mut entry_ix = self.index_for_selection(selection).unwrap_or_default();
+            if let Some(_) = self.visible_entries.get(entry_ix) {
+                if entry_ix + 1 < self.visible_entries.len() {
                     entry_ix += 1;
                 } else {
                     entry_ix = 0;
                 }
-            }
-
-            if let Some((worktree_entries, _)) = self.visible_entries.get(entry_ix) {
-                if let Some(entry) = worktree_entries.get(entry_ix) {
-                    self.selection = Some(entry.id);
-
-                    self.autoscroll(cx);
-                    cx.notify();
-                }
+                let entry = &self.visible_entries[entry_ix];
+                self.selection = Some(entry.id);
+                self.autoscroll(cx);
+                cx.notify();
             }
         } else {
             self.select_first(&SelectFirst {}, cx);
@@ -270,22 +264,16 @@ impl BreadCrumbsPanel {
     }
 
     fn autoscroll(&mut self, cx: &mut ViewContext<Self>) {
-        if let Some((_, index)) = self.selection.and_then(|s| self.index_for_selection(s)) {
+        if let Some(index) = self.selection.and_then(|s| self.index_for_selection(s)) {
             self.scroll_handle.scroll_to_item(index);
             cx.notify();
         }
     }
 
-    fn index_for_selection(&self, selection: ProjectEntryId) -> Option<(usize, usize)> {
-        let mut entry_index = 0;
-        let mut visible_entries_index = 0;
-        for (worktree_entries, _) in self.visible_entries.iter() {
-            for entry in worktree_entries {
-                visible_entries_index += 1;
-                entry_index += 1;
-                if entry.id == selection {
-                    return Some((entry_index, visible_entries_index));
-                }
+    fn index_for_selection(&self, selection: ProjectEntryId) -> Option<usize> {
+        for (idx, entry) in self.visible_entries.iter().enumerate() {
+            if entry.id == selection {
+                return Some(idx);
             }
         }
         None
@@ -315,10 +303,12 @@ impl BreadCrumbsPanel {
         new_selected_entry: Option<ProjectEntryId>,
         cx: &mut ViewContext<Self>,
     ) {
-        let project = self.project.read(cx);
-
         self.visible_entries.clear();
-        let worktree = project.worktree_for_id(self.worktree_id, cx).unwrap();
+        let worktree = self
+            .project
+            .read(cx)
+            .worktree_for_id(self.worktree_id, cx)
+            .unwrap();
         let snapshot = worktree.read(cx).snapshot();
 
         let mut visible_worktree_entries = Vec::new();
@@ -334,8 +324,7 @@ impl BreadCrumbsPanel {
         }
 
         project::sort_worktree_entries(&mut visible_worktree_entries);
-        self.visible_entries
-            .push((visible_worktree_entries, OnceCell::new()));
+        self.visible_entries = visible_worktree_entries;
         self.selection = new_selected_entry;
     }
 
@@ -355,77 +344,68 @@ impl BreadCrumbsPanel {
         cx: &mut ViewContext<BreadCrumbsPanel>,
         mut callback: impl FnMut(ProjectEntryId, EntryDetails, &mut ViewContext<BreadCrumbsPanel>),
     ) {
-        let mut ix = 0;
-        for (visible_worktree_entries, entries_paths) in &self.visible_entries {
-            if ix >= range.end {
+        for (index, entry) in self.visible_entries.iter().enumerate() {
+            if index >= range.end {
                 return;
             }
 
-            if ix + visible_worktree_entries.len() <= range.start {
-                ix += visible_worktree_entries.len();
+            if index <= range.start {
                 continue;
             }
 
-            let end_ix = range.end.min(ix + visible_worktree_entries.len());
             let show_file_icons = true;
             if let Some(worktree) = self.project.read(cx).worktree_for_id(self.worktree_id, cx) {
                 let snapshot = worktree.read(cx).snapshot();
                 let root_name = OsStr::new(snapshot.root_name());
 
-                let entry_range = range.start.saturating_sub(ix)..end_ix - ix;
-                let entries = entries_paths.get_or_init(|| {
-                    visible_worktree_entries
-                        .iter()
-                        .map(|e| (e.path.clone()))
-                        .collect()
-                });
-                for entry in visible_worktree_entries[entry_range].iter() {
-                    let is_expanded = self.expanded_dir_ids.binary_search(&entry.id).is_ok();
-                    let icon = match entry.kind {
-                        EntryKind::File(_) => {
-                            if show_file_icons {
-                                FileIcons::get_icon(&entry.path, cx)
-                            } else {
-                                None
-                            }
+                let is_expanded = self.expanded_dir_ids.binary_search(&entry.id).is_ok();
+                let icon = match entry.kind {
+                    EntryKind::File(_) => {
+                        if show_file_icons {
+                            FileIcons::get_icon(&entry.path, cx)
+                        } else {
+                            None
                         }
-                        _ => FileIcons::get_chevron_icon(is_expanded, cx),
-                    };
+                    }
+                    _ => FileIcons::get_chevron_icon(is_expanded, cx),
+                };
+                let entries = self
+                    .visible_entries
+                    .iter()
+                    .map(|e| e.path.clone())
+                    .collect();
 
-                    let (depth, difference) =
-                        BreadCrumbsPanel::calculate_depth_and_difference(entry, &entries);
+                let (depth, difference) =
+                    BreadCrumbsPanel::calculate_depth_and_difference(entry, &entries);
 
-                    let filename = match difference {
-                        diff if diff > 1 => entry
-                            .path
-                            .iter()
-                            .skip(entry.path.components().count() - diff)
-                            .collect::<PathBuf>()
-                            .to_str()
-                            .unwrap_or_default()
-                            .to_string(),
-                        _ => entry
-                            .path
-                            .file_name()
-                            .map(|name| name.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| root_name.to_string_lossy().to_string()),
-                    };
-                    let details = EntryDetails {
-                        filename,
-                        icon,
-                        path: entry.path.clone(),
-                        depth,
-                        kind: entry.kind,
-                        is_expanded,
-                        is_selected: self.selection == Some(entry.id),
-                        worktree_id: self.worktree_id,
-                        canonical_path: entry.canonical_path.clone(),
-                    };
+                let filename = match difference {
+                    diff if diff > 1 => entry
+                        .path
+                        .iter()
+                        .skip(entry.path.components().count() - diff)
+                        .collect::<PathBuf>()
+                        .to_str()
+                        .unwrap_or_default()
+                        .to_string(),
+                    _ => entry
+                        .path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| root_name.to_string_lossy().to_string()),
+                };
+                let details = EntryDetails {
+                    filename,
+                    icon,
+                    path: entry.path.clone(),
+                    depth,
+                    kind: entry.kind,
+                    is_expanded,
+                    is_selected: self.selection == Some(entry.id),
+                    canonical_path: entry.canonical_path.clone(),
+                };
 
-                    callback(entry.id, details, cx);
-                }
+                callback(entry.id, details, cx);
             }
-            ix = end_ix;
         }
     }
 
@@ -602,11 +582,7 @@ impl BreadCrumbsPanel {
 
 impl Render for BreadCrumbsPanel {
     fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        let items_count = self
-            .visible_entries
-            .iter()
-            .map(|(worktree_entries, _)| worktree_entries.len())
-            .sum();
+        let items_count = self.visible_entries.len();
 
         h_flex()
             .id("breadcrumbs-panel")
