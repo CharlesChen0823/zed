@@ -66,21 +66,11 @@ pub enum Event {
 impl BreadCrumbsPanel {
     fn new(
         workspace: &mut Workspace,
-        target_path: PathBuf,
+        target_path: ProjectPath,
         cx: &mut ViewContext<Workspace>,
     ) -> View<Self> {
         let project = workspace.project().clone();
-        let project_path =
-            if let Some(project_path) = project.read(cx).find_project_path(&target_path, cx) {
-                project_path
-            } else {
-                return;
-            };
-        let entry = if let Some(entry) = project.read(cx).entry_for_path(&project_path.path, cx) {
-            entry
-        } else {
-            return;
-        };
+        let entry = project.read(cx).entry_for_path(&target_path, cx).unwrap();
         let breadcrumbs_panel = cx.new_view(|cx: &mut ViewContext<Self>| {
             let focus_handle = cx.focus_handle();
             cx.on_focus(&focus_handle, Self::focus_in).detach();
@@ -98,7 +88,7 @@ impl BreadCrumbsPanel {
                 project: project.clone(),
                 scroll_handle: UniformListScrollHandle::new(),
                 focus_handle,
-                worktree_id: project_path.worktree_id,
+                worktree_id: target_path.worktree_id,
                 visible_entries: Default::default(),
                 expanded_dir_ids: Default::default(),
                 current_entry: entry.id,
@@ -186,7 +176,7 @@ impl BreadCrumbsPanel {
                     expanded_dir_ids.insert(ix, entry_id);
                 }
             }
-            self.update_visible_entries(Some((worktree_id, entry_id)), cx);
+            self.update_visible_entries(Some(entry_id), cx);
             cx.focus(&self.focus_handle);
             cx.notify();
         }
@@ -358,7 +348,7 @@ impl BreadCrumbsPanel {
 
     fn update_visible_entries(
         &mut self,
-        new_selected_entry: Option<(WorktreeId, ProjectEntryId)>,
+        new_selected_entry: Option<ProjectEntryId>,
         cx: &mut ViewContext<Self>,
     ) {
         let project = self.project.read(cx);
@@ -382,8 +372,8 @@ impl BreadCrumbsPanel {
 
         let mut visible_worktree_entries = Vec::new();
         let entry = worktree.read(cx).entry_for_id(self.current_entry).unwrap();
-        let path = entry.path.parent().unwrap_or(worktree.abs_path());
-        let mut entries_iter = snapshot.child_entries(path);
+        let path = entry.path.parent().unwrap_or(&worktree.read(cx).abs_path());
+        let mut entry_iter = snapshot.entries(false, 0);
         while let Some(entry) = entry_iter.entry() {
             visible_worktree_entries.push(entry.clone());
             if expanded_dir_ids.binary_search(&entry.id).is_err() && entry_iter.advance_to_sibling()
@@ -395,10 +385,8 @@ impl BreadCrumbsPanel {
 
         project::sort_worktree_entries(&mut visible_worktree_entries);
         self.visible_entries
-            .push((worktree_id, visible_worktree_entries, OnceCell::new()));
-        if let Some((worktree_id, entry_id)) = new_selected_entry {
-            self.selection = Some(entry_id);
-        }
+            .push((self.worktree_id, visible_worktree_entries, OnceCell::new()));
+        self.selection = new_selected_entry;
     }
 
     fn confirm(&mut self, _: &Confirm, cx: &mut ViewContext<Self>) {
