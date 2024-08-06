@@ -312,7 +312,8 @@ impl BreadCrumbsPanel {
         let snapshot = worktree.read(cx).snapshot();
 
         let mut visible_worktree_entries = Vec::new();
-        let mut entry_iter = snapshot.entries(false, 0);
+        let entry = worktree.read(cx).entry_for_id(self.current_entry).unwrap();
+        let mut entry_iter = snapshot.traverse_from_path(true, true, true, &entry.path);
         while let Some(entry) = entry_iter.entry() {
             visible_worktree_entries.push(entry.clone());
             if self.expanded_dir_ids.binary_search(&entry.id).is_err()
@@ -350,23 +351,16 @@ impl BreadCrumbsPanel {
             }
 
             if index <= range.start {
-                continue;
+                return;
             }
 
-            let show_file_icons = true;
             if let Some(worktree) = self.project.read(cx).worktree_for_id(self.worktree_id, cx) {
                 let snapshot = worktree.read(cx).snapshot();
                 let root_name = OsStr::new(snapshot.root_name());
 
                 let is_expanded = self.expanded_dir_ids.binary_search(&entry.id).is_ok();
                 let icon = match entry.kind {
-                    EntryKind::File(_) => {
-                        if show_file_icons {
-                            FileIcons::get_icon(&entry.path, cx)
-                        } else {
-                            None
-                        }
-                    }
+                    EntryKind::File(_) => FileIcons::get_icon(&entry.path, cx),
                     _ => FileIcons::get_chevron_icon(is_expanded, cx),
                 };
                 let entries = self
