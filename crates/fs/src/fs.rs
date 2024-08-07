@@ -15,6 +15,8 @@ use git::repository::{GitRepository, RealGitRepository};
 use gpui::{AppContext, Global, ReadGlobal};
 use rope::Rope;
 use smol::io::AsyncWriteExt;
+#[cfg(any(test, feature = "test-support"))]
+use std::sync::LazyLock;
 use std::{
     io::{self, Write},
     path::{Component, Path, PathBuf},
@@ -794,9 +796,7 @@ impl FakeFsState {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-use std::sync::LazyLock;
 pub static FS_DOT_GIT: LazyLock<&'static OsStr> = LazyLock::new(|| OsStr::new(".git"));
-
 #[cfg(any(test, feature = "test-support"))]
 impl FakeFs {
     pub fn new(executor: gpui::BackgroundExecutor) -> Arc<Self> {

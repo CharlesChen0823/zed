@@ -12,13 +12,15 @@ use std::{
     num::NonZeroU64,
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
-        Arc, LazyLock, Weak,
+        Arc, Weak,
     },
     thread::panicking,
 };
 
 #[cfg(any(test, feature = "test-support"))]
 use collections::HashMap;
+#[cfg(any(test, feature = "test-support"))]
+use std::sync::LazyLock;
 
 slotmap::new_key_type! {
     /// A unique identifier for a model or view across the application.
