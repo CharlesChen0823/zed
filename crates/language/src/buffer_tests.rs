@@ -16,6 +16,7 @@ use settings::SettingsStore;
 use std::{
     env,
     ops::Range,
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 use text::network::Network;
@@ -24,12 +25,12 @@ use text::{Point, ToPoint};
 use unindent::Unindent as _;
 use util::{assert_set_eq, post_inc, test::marked_text_ranges, RandomCharIter};
 
-lazy_static! {
-    static ref TRAILING_WHITESPACE_REGEX: Regex = RegexBuilder::new("[ \t]+$")
+static TRAILING_WHITESPACE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    RegexBuilder::new("[ \t]+$")
         .multi_line(true)
         .build()
-        .unwrap();
-}
+        .unwrap()
+});
 
 #[cfg(test)]
 #[ctor::ctor]

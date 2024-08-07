@@ -6,7 +6,6 @@ use gpui::{AppContext, AsyncAppContext};
 use http_client::github::{latest_github_release, GitHubLspBinaryVersion};
 pub use language::*;
 use language_settings::all_language_settings;
-use lazy_static::lazy_static;
 use lsp::LanguageServerBinary;
 use project::project_settings::{BinarySettings, ProjectSettings};
 use regex::Regex;
@@ -17,7 +16,7 @@ use std::{
     borrow::Cow,
     env::consts,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 use task::{TaskTemplate, TaskTemplates, TaskVariables, VariableName};
 use util::{fs::remove_matching, maybe, ResultExt};
@@ -178,9 +177,7 @@ impl LspAdapter for RustLspAdapter {
     }
 
     fn process_diagnostics(&self, params: &mut lsp::PublishDiagnosticsParams) {
-        lazy_static! {
-            static ref REGEX: Regex = Regex::new("(?m)`([^`]+)\n`$").unwrap();
-        }
+        static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("(?m)`([^`]+)\n`$").unwrap());
 
         for diagnostic in &mut params.diagnostics {
             for message in diagnostic
@@ -243,9 +240,7 @@ impl LspAdapter for RustLspAdapter {
             Some(lsp::CompletionItemKind::FUNCTION | lsp::CompletionItemKind::METHOD)
                 if detail.is_some() =>
             {
-                lazy_static! {
-                    static ref REGEX: Regex = Regex::new("\\(…?\\)").unwrap();
-                }
+                static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("\\(…?\\)").unwrap());
                 let detail = detail.unwrap();
                 const FUNCTION_PREFIXES: [&'static str; 6] = [
                     "async fn",
