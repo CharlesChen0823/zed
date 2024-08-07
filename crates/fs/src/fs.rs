@@ -19,7 +19,7 @@ use std::{
     io::{self, Write},
     path::{Component, Path, PathBuf},
     pin::Pin,
-    sync::{Arc, LazyLock},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 use tempfile::{NamedTempFile, TempDir};
@@ -794,6 +794,7 @@ impl FakeFsState {
 }
 
 #[cfg(any(test, feature = "test-support"))]
+use std::sync::LazyLock;
 pub static FS_DOT_GIT: LazyLock<&'static OsStr> = LazyLock::new(|| OsStr::new(".git"));
 
 #[cfg(any(test, feature = "test-support"))]
