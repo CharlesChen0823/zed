@@ -1,12 +1,13 @@
 use crate::{scrollbar::Scrollbar, TogglePopover};
 
+use editor::scroll::ScrollbarAutoHide;
 use file_icons::FileIcons;
 
 use client::{ErrorCode, ErrorExt};
 use gpui::{
     div, px, uniform_list, AnyElement, AppContext, DismissEvent, Div, EventEmitter, FocusHandle,
     FocusableView, InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement,
-    Render, Stateful, Styled, UniformListScrollHandle, ViewContext, WeakView,
+    Render, Stateful, Styled, Task, UniformListScrollHandle, ViewContext, WeakView,
 };
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
 use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, WorktreeId};
@@ -18,8 +19,10 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
+    time::Duration,
 };
 use ui::{prelude::*, Icon, ListItem, Tooltip};
+use util::ResultExt;
 use workspace::{notifications::DetachAndPromptErr, ModalView, Workspace};
 
 pub struct Popover {
@@ -32,7 +35,9 @@ pub struct Popover {
     expanded_dir_ids: Vec<ProjectEntryId>,
     current_entry: ProjectEntryId,
     selection: Option<ProjectEntryId>,
+    show_scrollbar: bool,
     scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
+    hide_scrollbar_task: Option<Task<()>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -112,6 +117,8 @@ impl Popover {
             expanded_dir_ids: Default::default(),
             current_entry: entry.id,
             selection: None,
+            show_scrollbar: !Self::should_autohide_scrollbar(cx),
+            hide_scrollbar_task: None,
             scrollbar_drag_thumb_offset: Default::default(),
         };
         this.update_visible_entries(None, cx);
@@ -123,6 +130,29 @@ impl Popover {
         if !self.focus_handle.contains_focused(cx) {
             cx.emit(Event::Focus);
         }
+    }
+
+    fn should_autohide_scrollbar(cx: &AppContext) -> bool {
+        cx.try_global::<ScrollbarAutoHide>()
+            .map_or_else(|| cx.should_auto_hide_scrollbars(), |autohide| autohide.0)
+    }
+
+    fn hide_scrollbar(&mut self, cx: &mut ViewContext<Self>) {
+        const SCROLLBAR_SHOW_INTERVAL: Duration = Duration::from_secs(1);
+        if !Self::should_autohide_scrollbar(cx) {
+            return;
+        }
+        self.hide_scrollbar_task = Some(cx.spawn(|panel, mut cx| async move {
+            cx.background_executor()
+                .timer(SCROLLBAR_SHOW_INTERVAL)
+                .await;
+            panel
+                .update(&mut cx, |panel, cx| {
+                    panel.show_scrollbar = false;
+                    cx.notify();
+                })
+                .log_err();
+        }))
     }
 
     fn toggle_expanded(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
@@ -491,7 +521,7 @@ impl Popover {
 
         let height = scroll_handle
             .last_item_height
-            .filter(|_| self.scrollbar_drag_thumb_offset.get().is_some())?;
+            .filter(|_| self.show_scrollbar || self.scrollbar_drag_thumb_offset.get().is_some())?;
 
         let total_list_length = height.0 as f64 * items_count as f64;
         let current_offset = scroll_handle.base_handle.offset().y.0.min(0.).abs() as f64;
@@ -529,6 +559,19 @@ impl Popover {
                 .on_any_mouse_down(|_, cx| {
                     cx.stop_propagation();
                 })
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _, cx| {
+                        if this.scrollbar_drag_thumb_offset.get().is_none()
+                            && !this.focus_handle.contains_focused(cx)
+                        {
+                            this.hide_scrollbar(cx);
+                            cx.notify();
+                        }
+
+                        cx.stop_propagation();
+                    }),
+                )
                 .on_scroll_wheel(cx.listener(|_, _, cx| {
                     cx.notify();
                 }))
@@ -560,7 +603,16 @@ impl Render for Popover {
             .key_context("breadcrumbs")
             .overflow_y_scroll()
             .w(px(400.0))
-            .h(px(400.0))
+            .max_h(px(200.0))
+            .on_hover(cx.listener(|this, hovered, cx| {
+                if *hovered {
+                    this.show_scrollbar = true;
+                    this.hide_scrollbar_task.take();
+                    cx.notify();
+                } else if !this.focus_handle.contains_focused(cx) {
+                    this.hide_scrollbar(cx);
+                }
+            }))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
             .on_action(cx.listener(Self::select_first))
