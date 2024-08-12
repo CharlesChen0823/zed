@@ -1,32 +1,42 @@
-mod scrollbar;
 mod popover;
+mod scrollbar;
 use editor::Editor;
 use gpui::{
-    Element, EventEmitter, IntoElement, ParentElement, Render, StyledText, Subscription,
-    ViewContext,
+    actions, AppContext, Element, EventEmitter, IntoElement, ParentElement, Render, StyledText,
+    Subscription, ViewContext, WeakView,
 };
 use itertools::Itertools;
-use std::cmp;
+use popover::*;
+use std::{cmp, path::PathBuf};
 use theme::ActiveTheme;
-use ui::{prelude::*, ButtonLike, ButtonStyle, Label, Tooltip};
+use ui::{prelude::*, ButtonLike, ButtonStyle, Label, ToggleButton, Tooltip};
 use workspace::{
     item::{BreadcrumbText, ItemEvent, ItemHandle},
-    ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
+    ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView, Workspace,
 };
-use popover::*;
+
+actions!(breadcrumbs, [TogglePopover]);
 
 pub struct Breadcrumbs {
     pane_focused: bool,
     active_item: Option<Box<dyn ItemHandle>>,
     subscription: Option<Subscription>,
+    workspace: WeakView<Workspace>,
+}
+
+pub fn init(cx: &mut AppContext) {
+    let _ = cx.observe_new_views(|workspace, cx| {
+        Popover::register(workspace, cx);
+    }).detach();
 }
 
 impl Breadcrumbs {
-    pub fn new() -> Self {
+    pub fn new(workspace: &mut Workspace) -> Self {
         Self {
             pane_focused: false,
             active_item: Default::default(),
             subscription: Default::default(),
+            workspace: workspace.weak_handle(),
         }
     }
 }
@@ -43,6 +53,13 @@ impl Render for Breadcrumbs {
         let Some(mut segments) = active_item.breadcrumbs(cx.theme(), cx) else {
             return element;
         };
+
+        let text = if let Some(text) = segments.iter().last().clone() {
+            text.text.clone()
+        } else {
+            "".into()
+        };
+        let path = PathBuf::from(text);
 
         let prefix_end_ix = cmp::min(segments.len(), MAX_SEGMENTS / 2);
         let suffix_start_ix = cmp::max(
@@ -78,28 +95,36 @@ impl Render for Breadcrumbs {
             Label::new("›").color(Color::Placeholder).into_any_element()
         });
 
+        let workspace = self.workspace.clone();
+
         let breadcrumbs_stack = h_flex().gap_1().children(breadcrumbs);
         match active_item
             .downcast::<Editor>()
             .map(|editor| editor.downgrade())
         {
-            Some(editor) => element.child(
-                ButtonLike::new("toggle outline view")
-                    .child(breadcrumbs_stack)
-                    .style(ButtonStyle::Transparent)
-                    .on_click(move |_, cx| {
-                        if let Some(editor) = editor.upgrade() {
-                            outline::toggle(editor, &editor::actions::ToggleOutline, cx)
-                        }
-                    })
-                    .tooltip(|cx| {
-                        Tooltip::for_action(
-                            "Show symbol outline",
-                            &editor::actions::ToggleOutline,
-                            cx,
-                        )
-                    }),
-            ),
+            Some(editor) => {
+                element
+                    .child(ToggleButton::new("active panel", "active panel").on_click(
+                        cx.listener(|_, _, cx| cx.dispatch_action(Box::new(TogglePopover))),
+                    ))
+                    .child(
+                        ButtonLike::new("toggle outline view")
+                            .child(breadcrumbs_stack)
+                            .style(ButtonStyle::Transparent)
+                            .on_click(move |_, cx| {
+                                if let Some(editor) = editor.upgrade() {
+                                    outline::toggle(editor, &editor::actions::ToggleOutline, cx)
+                                }
+                            })
+                            .tooltip(|cx| {
+                                Tooltip::for_action(
+                                    "Show symbol outline",
+                                    &editor::actions::ToggleOutline,
+                                    cx,
+                                )
+                            }),
+                    )
+            }
             None => element
                 // Match the height of the `ButtonLike` in the other arm.
                 .h(rems_from_px(22.))

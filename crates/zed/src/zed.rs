@@ -541,7 +541,7 @@ fn initialize_pane(workspace: &mut Workspace, pane: &View<Pane>, cx: &mut ViewCo
         pane.toolbar().update(cx, |toolbar, cx| {
             let multibuffer_hint = cx.new_view(|_| MultibufferHint::new());
             toolbar.add_item(multibuffer_hint, cx);
-            let breadcrumbs = cx.new_view(|_| Breadcrumbs::new());
+            let breadcrumbs = cx.new_view(|_| Breadcrumbs::new(workspace));
             toolbar.add_item(breadcrumbs, cx);
             let buffer_search_bar = cx.new_view(search::BufferSearchBar::new);
             toolbar.add_item(buffer_search_bar.clone(), cx);

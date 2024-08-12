@@ -1,12 +1,13 @@
-use crate::scrollbar::Scrollbar;
+use crate::{scrollbar::Scrollbar, TogglePopover};
 
 use file_icons::FileIcons;
 
 use client::{ErrorCode, ErrorExt};
 use gpui::{
-    div, px, uniform_list, AnyElement, AppContext, DismissEvent, Div, EventEmitter, FocusHandle,
-    FocusableView, InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement,
-    Render, Stateful, Styled, UniformListScrollHandle, View, ViewContext, VisualContext as _,
+    actions, blue, div, px, uniform_list, yellow, AnyElement, AppContext, DismissEvent, Div,
+    EventEmitter, FocusHandle, FocusableView, InteractiveElement, ListSizingBehavior, Model,
+    MouseButton, ParentElement, Render, Stateful, Styled, UniformListScrollHandle, View,
+    ViewContext, VisualContext as _,
 };
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
 use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, WorktreeId};
@@ -20,7 +21,7 @@ use std::{
     sync::Arc,
 };
 use ui::{prelude::*, Icon, ListItem, Tooltip};
-use workspace::{notifications::DetachAndPromptErr, Workspace};
+use workspace::{notifications::DetachAndPromptErr, DismissDecision, ModalView, Workspace};
 
 pub struct Popover {
     project: Model<Project>,
@@ -53,98 +54,129 @@ pub enum Event {
     Focus,
 }
 
+impl EventEmitter<Event> for Popover {}
+
+impl EventEmitter<DismissEvent> for Popover {}
+
+impl FocusableView for Popover {
+    fn focus_handle(&self, _cx: &AppContext) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl ModalView for Popover {}
+
 impl Popover {
-    pub fn new(
-        workspace: &mut Workspace,
-        target_path: PathBuf,
-        cx: &mut ViewContext<Workspace>,
-    ) -> View<Self> {
-        let project = workspace.project().clone();
-        let project_path = project
-            .read(cx)
-            .find_project_path(&target_path, cx)
-            .unwrap();
-        let entry = project.read(cx).entry_for_path(&project_path, cx).unwrap();
-        let breadcrumbs_panel = cx.new_view(|cx: &mut ViewContext<Self>| {
-            let focus_handle = cx.focus_handle();
-            cx.on_focus(&focus_handle, Self::focus_in).detach();
-
-            cx.observe_global::<FileIcons>(|_, cx| {
-                cx.notify();
+    pub fn register(workspace: &mut Workspace, cx: &mut ViewContext<Workspace>) {
+        let _handle = cx.view().downgrade();
+        workspace.register_action(move |workspace, _: &TogglePopover, cx| {
+            let project = workspace.project().clone();
+            cx.spawn(|workspace, mut cx| async move {
+                workspace.update(&mut cx, |workspace, cx| {
+                    // let project = workspace.project().clone();
+                    workspace.toggle_modal(cx, move |cx| {
+                        Popover::new(
+                            project,
+                            "/home/charles/program/python/django/django/db/transaction.py".into(),
+                            cx,
+                        )
+                    });
+                })?;
+                anyhow::Ok(())
             })
-            .detach();
-
-            let mut this = Self {
-                project: project.clone(),
-                scroll_handle: UniformListScrollHandle::new(),
-                focus_handle,
-                worktree_id: project_path.worktree_id,
-                visible_entries: Default::default(),
-                expanded_dir_ids: Default::default(),
-                current_entry: entry.id,
-                selection: None,
-                scrollbar_drag_thumb_offset: Default::default(),
-            };
-            this.update_visible_entries(None, cx);
-
-            this
+            .detach_and_log_err(cx);
         });
+    }
+    fn new(project: Model<Project>, target_path: PathBuf, cx: &mut ViewContext<Self>) -> Self {
+        let (worktree, path) = project.read(cx).find_worktree(&target_path, cx).unwrap();
+        // let project_path = ProjectPath {
+        //     worktree_id: project_path.worktree_id,
+        //     path: PathBuf::from("django").join(path).into(),
+        // };
+        // let path = PathBuf::from("django").join(path);
+        // let worktree = project.read(cx).worktree_for_id(project_path.worktree_id, cx).unwrap();
+        let entry = worktree.read(cx).entry_for_path(path).unwrap().clone();
+        // let entry = project.read(cx).entry_for_path(&project_path, cx).unwrap();
+        // let breadcrumbs_panel = cx.new_view(|cx: &mut ViewContext<Self>| {
+        let focus_handle = cx.focus_handle();
+        // cx.on_focus(&focus_handle, Self::focus_in).detach();
 
-        cx.subscribe(&breadcrumbs_panel, {
-            move |workspace, _, event, cx| match event {
-                &Event::OpenedEntry {
-                    entry_id,
-                } => {
-                    if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
-                        if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
-                            let worktree_id = worktree.read(cx).id();
-                            let file_path = entry.path.clone();
-
-                            workspace
-                                .open_path_preview(
-                                    ProjectPath {
-                                        worktree_id,
-                                        path: file_path.clone(),
-                                    },
-                                    None,
-                                    true,
-                                    true,
-                                    cx,
-                                )
-                                .detach_and_prompt_err("Failed to open file", cx, move |e, _| {
-                                    match e.error_code() {
-                                        ErrorCode::Disconnected => Some("Disconnected from remote project".to_string()),
-                                        ErrorCode::UnsharedItem => Some(format!(
-                                            "{} is not shared by the host. This could be because it has been marked as `private`",
-                                            file_path.display()
-                                        )),
-                                        _ => None,
-                                    }
-                                });
-                        }
-                    }
-                }
-                &Event::SplitEntry { entry_id } => {
-                    if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
-                        if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
-                            workspace
-                                .split_path(
-                                    ProjectPath {
-                                        worktree_id: worktree.read(cx).id(),
-                                        path: entry.path.clone(),
-                                    },
-                                    cx,
-                                )
-                                .detach_and_log_err(cx);
-                        }
-                    }
-                }
-                _ => {}
-            }
+        cx.observe_global::<FileIcons>(|_, cx| {
+            cx.notify();
         })
         .detach();
 
-        breadcrumbs_panel
+        let mut this = Self {
+            project: project.clone(),
+            scroll_handle: UniformListScrollHandle::new(),
+            focus_handle,
+            worktree_id: worktree.read(cx).id(),
+            visible_entries: Default::default(),
+            expanded_dir_ids: Default::default(),
+            current_entry: entry.id,
+            selection: None,
+            scrollbar_drag_thumb_offset: Default::default(),
+        };
+        this.update_visible_entries(None, cx);
+
+        this
+        // });
+
+        // cx.subscribe(&breadcrumbs_panel, {
+        //     move |workspace, _, event, cx| match event {
+        //         &Event::OpenedEntry {
+        //             entry_id,
+        //         } => {
+        //             if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
+        //                 if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
+        //                     let worktree_id = worktree.read(cx).id();
+        //                     let file_path = entry.path.clone();
+
+        //                     workspace
+        //                         .open_path_preview(
+        //                             ProjectPath {
+        //                                 worktree_id,
+        //                                 path: file_path.clone(),
+        //                             },
+        //                             None,
+        //                             true,
+        //                             true,
+        //                             cx,
+        //                         )
+        //                         .detach_and_prompt_err("Failed to open file", cx, move |e, _| {
+        //                             match e.error_code() {
+        //                                 ErrorCode::Disconnected => Some("Disconnected from remote project".to_string()),
+        //                                 ErrorCode::UnsharedItem => Some(format!(
+        //                                     "{} is not shared by the host. This could be because it has been marked as `private`",
+        //                                     file_path.display()
+        //                                 )),
+        //                                 _ => None,
+        //                             }
+        //                         });
+        //                 }
+        //             }
+        //         }
+        //         &Event::SplitEntry { entry_id } => {
+        //             if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
+        //                 if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
+        //                     workspace
+        //                         .split_path(
+        //                             ProjectPath {
+        //                                 worktree_id: worktree.read(cx).id(),
+        //                                 path: entry.path.clone(),
+        //                             },
+        //                             cx,
+        //                         )
+        //                         .detach_and_log_err(cx);
+        //                 }
+        //             }
+        //         }
+        //         _ => {}
+        //     }
+        // })
+        // .detach();
+
+        // breadcrumbs_panel
     }
 
     fn focus_in(&mut self, cx: &mut ViewContext<Self>) {
@@ -302,7 +334,7 @@ impl Popover {
             let snapshot = worktree.read(cx).snapshot();
             let root_name = OsStr::new(snapshot.root_name());
             for (index, entry) in self.visible_entries.iter().enumerate() {
-                if index >= range.end || index <= range.start {
+                if index > range.end || index < range.start {
                     return;
                 }
 
@@ -390,6 +422,7 @@ impl Popover {
             .selection
             .map_or(false, |selection| selection == entry_id);
         let icon = details.icon.clone();
+        let file_name = details.filename.clone();
 
         let canonical_path = details
             .canonical_path
@@ -399,7 +432,9 @@ impl Popover {
         let depth = details.depth;
 
         div()
+            .elevation_3(cx)
             .id(entry_id.to_proto() as usize)
+            .w_128()
             .child(
                 ListItem::new(entry_id.to_proto() as usize)
                     .indent_level(depth)
@@ -424,6 +459,7 @@ impl Popover {
                             .invisible()
                             .flex_none()
                     })
+                    .child(h_flex().h_6().child(Label::new(file_name).single_line()))
                     .on_click(cx.listener(move |this, event: &gpui::ClickEvent, cx| {
                         if event.down.button == MouseButton::Right || event.down.first_mouse {
                             return;
@@ -489,6 +525,7 @@ impl Popover {
         let end_offset = end_offset.clamp(percentage + MINIMUM_SCROLLBAR_PERCENTAGE_HEIGHT, 1.);
         Some(
             div()
+                .elevation_3(cx)
                 .occlude()
                 .id("breadcrumbs-popover-scroll")
                 .on_mouse_move(cx.listener(|_, _, cx| {
@@ -523,16 +560,17 @@ impl Popover {
 }
 
 impl Render for Popover {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let items_count = self.visible_entries.len();
 
-        div()
+        v_flex()
+            .elevation_3(cx)
             .id("breadcrumbs-popover")
             .group("breadcrumbs-popover")
-            .elevation_2(cx)
+            .key_context("breadcrumbs")
             .overflow_y_scroll()
-            .max_w(px(100.0))
-            .max_h(px(100.0))
+            .max_w(px(400.0))
+            .max_h(px(400.0))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
             .on_action(cx.listener(Self::select_first))
@@ -549,20 +587,11 @@ impl Render for Popover {
                         items
                     }
                 })
+                // .elevation_3(cx)
                 .size_full()
                 .with_sizing_behavior(ListSizingBehavior::Infer)
                 .track_scroll(self.scroll_handle.clone()),
             )
             .children(self.render_scrollbar(items_count, cx))
-    }
-}
-
-impl EventEmitter<Event> for Popover {}
-
-impl EventEmitter<DismissEvent> for Popover {}
-
-impl FocusableView for Popover {
-    fn focus_handle(&self, _cx: &AppContext) -> FocusHandle {
-        self.focus_handle.clone()
     }
 }

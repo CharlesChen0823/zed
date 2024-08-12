@@ -248,6 +248,7 @@ fn init_ui(app_state: Arc<AppState>, cx: &mut AppContext) -> Result<()> {
     collab_ui::init(&app_state, cx);
     feedback::init(cx);
     markdown_preview::init(cx);
+    breadcrumbs::init(cx);
     welcome::init(cx);
     settings_ui::init(cx);
     extensions_ui::init(cx);
