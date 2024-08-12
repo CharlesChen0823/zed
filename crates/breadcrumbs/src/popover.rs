@@ -297,11 +297,12 @@ impl Popover {
 
         let mut visible_worktree_entries = Vec::new();
         let entry = worktree.read(cx).entry_for_id(self.current_entry).unwrap();
-        let mut entry_iter = snapshot.traverse_from_path(true, true, true, &entry.path);
+        let parent = entry.path.parent().unwrap();
+        let mut entry_iter = snapshot.traverse_from_path(true, true, true, &parent);
         while let Some(entry) = entry_iter.entry() {
             visible_worktree_entries.push(entry.clone());
             if self.expanded_dir_ids.binary_search(&entry.id).is_err()
-                && entry_iter.advance_to_sibling()
+            && entry_iter.advance_to_sibling()
             {
                 continue;
             }
@@ -434,7 +435,7 @@ impl Popover {
         div()
             .elevation_3(cx)
             .id(entry_id.to_proto() as usize)
-            .w_128()
+            .w_full()
             .child(
                 ListItem::new(entry_id.to_proto() as usize)
                     .indent_level(depth)
@@ -525,6 +526,7 @@ impl Popover {
         let end_offset = end_offset.clamp(percentage + MINIMUM_SCROLLBAR_PERCENTAGE_HEIGHT, 1.);
         Some(
             div()
+                .absolute()
                 .elevation_3(cx)
                 .occlude()
                 .id("breadcrumbs-popover-scroll")
@@ -542,7 +544,6 @@ impl Popover {
                     cx.notify();
                 }))
                 .h_full()
-                .absolute()
                 .right_0()
                 .top_0()
                 .bottom_0()
@@ -569,8 +570,8 @@ impl Render for Popover {
             .group("breadcrumbs-popover")
             .key_context("breadcrumbs")
             .overflow_y_scroll()
-            .max_w(px(400.0))
-            .max_h(px(400.0))
+            .w(px(400.0))
+            .h(px(400.0))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
             .on_action(cx.listener(Self::select_first))
