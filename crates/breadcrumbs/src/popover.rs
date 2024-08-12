@@ -4,10 +4,9 @@ use file_icons::FileIcons;
 
 use client::{ErrorCode, ErrorExt};
 use gpui::{
-    actions, blue, div, px, uniform_list, yellow, AnyElement, AppContext, DismissEvent, Div,
-    EventEmitter, FocusHandle, FocusableView, InteractiveElement, ListSizingBehavior, Model,
-    MouseButton, ParentElement, Render, Stateful, Styled, UniformListScrollHandle, View,
-    ViewContext, VisualContext as _,
+    div, px, uniform_list, AnyElement, AppContext, DismissEvent, Div, EventEmitter, FocusHandle,
+    FocusableView, InteractiveElement, ListSizingBehavior, Model, MouseButton, ParentElement,
+    Render, Stateful, Styled, UniformListScrollHandle, ViewContext, WeakView,
 };
 use menu::{Confirm, SelectFirst, SelectLast, SelectNext, SelectPrev};
 use project::{Entry, EntryKind, Project, ProjectEntryId, ProjectPath, WorktreeId};
@@ -21,9 +20,10 @@ use std::{
     sync::Arc,
 };
 use ui::{prelude::*, Icon, ListItem, Tooltip};
-use workspace::{notifications::DetachAndPromptErr, DismissDecision, ModalView, Workspace};
+use workspace::{notifications::DetachAndPromptErr, ModalView, Workspace};
 
 pub struct Popover {
+    workspace: WeakView<Workspace>,
     project: Model<Project>,
     scroll_handle: UniformListScrollHandle,
     focus_handle: FocusHandle,
@@ -49,8 +49,6 @@ pub struct EntryDetails {
 
 #[derive(Debug)]
 pub enum Event {
-    OpenedEntry { entry_id: ProjectEntryId },
-    SplitEntry { entry_id: ProjectEntryId },
     Focus,
 }
 
@@ -73,9 +71,10 @@ impl Popover {
             let project = workspace.project().clone();
             cx.spawn(|workspace, mut cx| async move {
                 workspace.update(&mut cx, |workspace, cx| {
-                    // let project = workspace.project().clone();
+                    let weak_workspace = cx.view().downgrade();
                     workspace.toggle_modal(cx, move |cx| {
                         Popover::new(
+                            weak_workspace,
                             project,
                             "/home/charles/program/python/django/django/db/transaction.py".into(),
                             cx,
@@ -87,19 +86,16 @@ impl Popover {
             .detach_and_log_err(cx);
         });
     }
-    fn new(project: Model<Project>, target_path: PathBuf, cx: &mut ViewContext<Self>) -> Self {
+    fn new(
+        workspace: WeakView<Workspace>,
+        project: Model<Project>,
+        target_path: PathBuf,
+        cx: &mut ViewContext<Self>,
+    ) -> Self {
         let (worktree, path) = project.read(cx).find_worktree(&target_path, cx).unwrap();
-        // let project_path = ProjectPath {
-        //     worktree_id: project_path.worktree_id,
-        //     path: PathBuf::from("django").join(path).into(),
-        // };
-        // let path = PathBuf::from("django").join(path);
-        // let worktree = project.read(cx).worktree_for_id(project_path.worktree_id, cx).unwrap();
         let entry = worktree.read(cx).entry_for_path(path).unwrap().clone();
-        // let entry = project.read(cx).entry_for_path(&project_path, cx).unwrap();
-        // let breadcrumbs_panel = cx.new_view(|cx: &mut ViewContext<Self>| {
         let focus_handle = cx.focus_handle();
-        // cx.on_focus(&focus_handle, Self::focus_in).detach();
+        cx.on_focus(&focus_handle, Self::focus_in).detach();
 
         cx.observe_global::<FileIcons>(|_, cx| {
             cx.notify();
@@ -107,6 +103,7 @@ impl Popover {
         .detach();
 
         let mut this = Self {
+            workspace,
             project: project.clone(),
             scroll_handle: UniformListScrollHandle::new(),
             focus_handle,
@@ -120,63 +117,6 @@ impl Popover {
         this.update_visible_entries(None, cx);
 
         this
-        // });
-
-        // cx.subscribe(&breadcrumbs_panel, {
-        //     move |workspace, _, event, cx| match event {
-        //         &Event::OpenedEntry {
-        //             entry_id,
-        //         } => {
-        //             if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
-        //                 if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
-        //                     let worktree_id = worktree.read(cx).id();
-        //                     let file_path = entry.path.clone();
-
-        //                     workspace
-        //                         .open_path_preview(
-        //                             ProjectPath {
-        //                                 worktree_id,
-        //                                 path: file_path.clone(),
-        //                             },
-        //                             None,
-        //                             true,
-        //                             true,
-        //                             cx,
-        //                         )
-        //                         .detach_and_prompt_err("Failed to open file", cx, move |e, _| {
-        //                             match e.error_code() {
-        //                                 ErrorCode::Disconnected => Some("Disconnected from remote project".to_string()),
-        //                                 ErrorCode::UnsharedItem => Some(format!(
-        //                                     "{} is not shared by the host. This could be because it has been marked as `private`",
-        //                                     file_path.display()
-        //                                 )),
-        //                                 _ => None,
-        //                             }
-        //                         });
-        //                 }
-        //             }
-        //         }
-        //         &Event::SplitEntry { entry_id } => {
-        //             if let Some(worktree) = project.read(cx).worktree_for_entry(entry_id, cx) {
-        //                 if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
-        //                     workspace
-        //                         .split_path(
-        //                             ProjectPath {
-        //                                 worktree_id: worktree.read(cx).id(),
-        //                                 path: entry.path.clone(),
-        //                             },
-        //                             cx,
-        //                         )
-        //                         .detach_and_log_err(cx);
-        //                 }
-        //             }
-        //         }
-        //         _ => {}
-        //     }
-        // })
-        // .detach();
-
-        // breadcrumbs_panel
     }
 
     fn focus_in(&mut self, cx: &mut ViewContext<Self>) {
@@ -220,11 +160,60 @@ impl Popover {
     }
 
     fn open_entry(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
-        cx.emit(Event::OpenedEntry { entry_id });
+        if let Some(worktree) = self.project.read(cx).worktree_for_entry(entry_id, cx) {
+            if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
+                let worktree_id = worktree.read(cx).id();
+                let file_path = entry.path.clone();
+                if let Some(workspace) = self.workspace.upgrade() {
+                    workspace.update(cx, |workspace, cx| {
+                    workspace.open_path_preview(
+                        ProjectPath {
+                            worktree_id,
+                            path: file_path.clone(),
+                        },
+                        None,
+                        true,
+                        true,
+                        cx,
+                    )
+                    .detach_and_prompt_err("Failed to open file", cx, move |e, _| {
+                        match e.error_code() {
+                            ErrorCode::Disconnected => Some("Disconnected from remote project".to_string()),
+                            ErrorCode::UnsharedItem => Some(format!(
+                                "{} is not shared by the host. This could be because it has been marked as `private`",
+                                file_path.display()
+                            )),
+                            _ => None,
+                        }
+                    });
+                });
+                }
+            }
+        }
+        cx.emit(DismissEvent);
     }
 
     fn split_entry(&mut self, entry_id: ProjectEntryId, cx: &mut ViewContext<Self>) {
-        cx.emit(Event::SplitEntry { entry_id });
+        if let Some(worktree) = self.project.read(cx).worktree_for_entry(entry_id, cx) {
+            if let Some(entry) = worktree.read(cx).entry_for_id(entry_id) {
+                let worktree_id = worktree.read(cx).id();
+                let file_path = entry.path.clone();
+                if let Some(workspace) = self.workspace.upgrade() {
+                    workspace.update(cx, |workspace, cx| {
+                        workspace
+                            .split_path(
+                                ProjectPath {
+                                    worktree_id,
+                                    path: file_path.clone(),
+                                },
+                                cx,
+                            )
+                            .detach_and_log_err(cx);
+                    });
+                }
+            }
+        }
+        cx.emit(DismissEvent);
     }
 
     fn select_next(&mut self, _: &SelectNext, cx: &mut ViewContext<Self>) {
@@ -302,7 +291,7 @@ impl Popover {
         while let Some(entry) = entry_iter.entry() {
             visible_worktree_entries.push(entry.clone());
             if self.expanded_dir_ids.binary_search(&entry.id).is_err()
-            && entry_iter.advance_to_sibling()
+                && entry_iter.advance_to_sibling()
             {
                 continue;
             }
@@ -577,6 +566,7 @@ impl Render for Popover {
             .on_action(cx.listener(Self::select_first))
             .on_action(cx.listener(Self::select_last))
             .on_action(cx.listener(Self::confirm))
+            .on_action(cx.listener(Self::cancel))
             .track_focus(&self.focus_handle)
             .child(
                 uniform_list(cx.view().clone(), "entries", items_count, {
