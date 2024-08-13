@@ -21,7 +21,7 @@ use language::{
 use multi_buffer::AnchorRangeExt;
 use project::{
     project_settings::ProjectSettings, search::SearchQuery, FormatTrigger, Item as _, Project,
-    ProjectPath,
+    ProjectPath, WorktreeId,
 };
 use rpc::proto::{self, update_view, PeerId};
 use settings::Settings;
@@ -827,6 +827,13 @@ impl Item for Editor {
         let buffer = multibuffer.buffer(buffer_id)?;
 
         let buffer = buffer.read(cx);
+        let worktree = buffer.file()?.worktree_id();
+        let worktree = self.project.as_ref().map(|project| {
+            project
+                .read(cx)
+                .worktree_for_id(WorktreeId::from_usize(worktree), cx)
+        });
+        let root = worktree.unwrap().unwrap().read(cx).abs_path().clone();
         let text = self.breadcrumb_header.clone().unwrap_or_else(|| {
             buffer
                 .snapshot()
@@ -845,7 +852,7 @@ impl Item for Editor {
 
         let mut breadcrumbs = vec![BreadcrumbItem::FileItem {
             path: text,
-            root: "".to_string(),
+            root: root.as_os_str().to_string_lossy().to_string(),
             font: Some(settings.buffer_font.clone()),
         }];
 
