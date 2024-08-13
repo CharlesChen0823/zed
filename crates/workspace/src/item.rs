@@ -128,11 +128,17 @@ pub enum ItemEvent {
     Edit,
 }
 
-// TODO: Combine this with existing HighlightedText struct?
-pub struct BreadcrumbText {
-    pub text: String,
-    pub highlights: Option<Vec<(Range<usize>, HighlightStyle)>>,
-    pub font: Option<Font>,
+pub enum BreadcrumbItem {
+    FileItem {
+        path: String,
+        root: String,
+        font: Option<Font>,
+    },
+    OutLineItem {
+        text: String,
+        highlights: Vec<(Range<usize>, HighlightStyle)>,
+        font: Font,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -274,7 +280,7 @@ pub trait Item: FocusableView + EventEmitter<Self::Event> {
         ToolbarItemLocation::Hidden
     }
 
-    fn breadcrumbs(&self, _theme: &Theme, _cx: &AppContext) -> Option<Vec<BreadcrumbText>> {
+    fn breadcrumbs(&self, _theme: &Theme, _cx: &AppContext) -> Option<Vec<BreadcrumbItem>> {
         None
     }
 
@@ -422,7 +428,7 @@ pub trait ItemHandle: 'static + Send {
     ) -> gpui::Subscription;
     fn to_searchable_item_handle(&self, cx: &AppContext) -> Option<Box<dyn SearchableItemHandle>>;
     fn breadcrumb_location(&self, cx: &AppContext) -> ToolbarItemLocation;
-    fn breadcrumbs(&self, theme: &Theme, cx: &AppContext) -> Option<Vec<BreadcrumbText>>;
+    fn breadcrumbs(&self, theme: &Theme, cx: &AppContext) -> Option<Vec<BreadcrumbItem>>;
     fn show_toolbar(&self, cx: &AppContext) -> bool;
     fn pixel_position_of_cursor(&self, cx: &AppContext) -> Option<Point<Pixels>>;
     fn downgrade_item(&self) -> Box<dyn WeakItemHandle>;
@@ -796,7 +802,7 @@ impl<T: Item> ItemHandle for View<T> {
         self.read(cx).breadcrumb_location()
     }
 
-    fn breadcrumbs(&self, theme: &Theme, cx: &AppContext) -> Option<Vec<BreadcrumbText>> {
+    fn breadcrumbs(&self, theme: &Theme, cx: &AppContext) -> Option<Vec<BreadcrumbItem>> {
         self.read(cx).breadcrumbs(theme, cx)
     }
 

@@ -42,7 +42,7 @@ pub use toolbar_controls::ToolbarControls;
 use ui::{h_flex, prelude::*, Icon, IconName, Label};
 use util::ResultExt;
 use workspace::{
-    item::{BreadcrumbText, Item, ItemEvent, ItemHandle, TabContentParams},
+    item::{BreadcrumbItem, Item, ItemEvent, ItemHandle, TabContentParams},
     ItemNavHistory, ToolbarItemLocation, Workspace,
 };
 
@@ -763,7 +763,7 @@ impl Item for ProjectDiagnosticsEditor {
         ToolbarItemLocation::PrimaryLeft
     }
 
-    fn breadcrumbs(&self, theme: &theme::Theme, cx: &AppContext) -> Option<Vec<BreadcrumbText>> {
+    fn breadcrumbs(&self, theme: &theme::Theme, cx: &AppContext) -> Option<Vec<BreadcrumbItem>> {
         self.editor.breadcrumbs(theme, cx)
     }
 

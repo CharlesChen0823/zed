@@ -40,7 +40,7 @@ use text::{BufferId, Selection};
 use theme::{Theme, ThemeSettings};
 use ui::{h_flex, prelude::*, Label};
 use util::{paths::PathExt, ResultExt, TryFutureExt};
-use workspace::item::{BreadcrumbText, FollowEvent};
+use workspace::item::{BreadcrumbItem, FollowEvent};
 use workspace::{
     item::{FollowableItem, Item, ItemEvent, ProjectItem},
     searchable::{Direction, SearchEvent, SearchableItem, SearchableItemHandle},
@@ -819,7 +819,7 @@ impl Item for Editor {
         }
     }
 
-    fn breadcrumbs(&self, variant: &Theme, cx: &AppContext) -> Option<Vec<BreadcrumbText>> {
+    fn breadcrumbs(&self, variant: &Theme, cx: &AppContext) -> Option<Vec<BreadcrumbItem>> {
         let cursor = self.selections.newest_anchor().head();
         let multibuffer = &self.buffer().read(cx);
         let (buffer_id, symbols) =
@@ -843,17 +843,21 @@ impl Item for Editor {
 
         let settings = ThemeSettings::get_global(cx);
 
-        let mut breadcrumbs = vec![BreadcrumbText {
-            text,
-            highlights: None,
+        let mut breadcrumbs = vec![BreadcrumbItem::FileItem {
+            path: text,
+            root: "".to_string(),
             font: Some(settings.buffer_font.clone()),
         }];
 
-        breadcrumbs.extend(symbols.into_iter().map(|symbol| BreadcrumbText {
-            text: symbol.text,
-            highlights: Some(symbol.highlight_ranges),
-            font: Some(settings.buffer_font.clone()),
-        }));
+        breadcrumbs.extend(
+            symbols
+                .into_iter()
+                .map(|symbol| BreadcrumbItem::OutLineItem {
+                    text: symbol.text,
+                    highlights: symbol.highlight_ranges,
+                    font: settings.buffer_font.clone(),
+                }),
+        );
         Some(breadcrumbs)
     }
 

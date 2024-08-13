@@ -28,7 +28,7 @@ use terminal_element::{is_blank, TerminalElement};
 use ui::{h_flex, prelude::*, ContextMenu, Icon, IconName, Label, Tooltip};
 use util::{paths::PathWithPosition, ResultExt};
 use workspace::{
-    item::{BreadcrumbText, Item, ItemEvent, SerializableItem, TabContentParams},
+    item::{BreadcrumbItem, Item, ItemEvent, SerializableItem, TabContentParams},
     notifications::NotifyResultExt,
     register_serializable_item,
     searchable::{SearchEvent, SearchOptions, SearchableItem, SearchableItemHandle},
@@ -1044,10 +1044,10 @@ impl Item for TerminalView {
         }
     }
 
-    fn breadcrumbs(&self, _: &theme::Theme, cx: &AppContext) -> Option<Vec<BreadcrumbText>> {
-        Some(vec![BreadcrumbText {
-            text: self.terminal().read(cx).breadcrumb_text.clone(),
-            highlights: None,
+    fn breadcrumbs(&self, _: &theme::Theme, cx: &AppContext) -> Option<Vec<BreadcrumbItem>> {
+        Some(vec![BreadcrumbItem::FileItem {
+            path: self.terminal().read(cx).breadcrumb_text.clone(),
+            root: "".to_string(),
             font: None,
         }])
     }

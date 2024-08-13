@@ -11,7 +11,7 @@ use std::{cmp, path::PathBuf};
 use theme::ActiveTheme;
 use ui::{prelude::*, ButtonLike, ButtonStyle, Label, ToggleButton, Tooltip};
 use workspace::{
-    item::{BreadcrumbText, ItemEvent, ItemHandle},
+    item::{BreadcrumbItem, ItemEvent, ItemHandle},
     ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView, Workspace,
 };
 
@@ -25,9 +25,11 @@ pub struct Breadcrumbs {
 }
 
 pub fn init(cx: &mut AppContext) {
-    let _ = cx.observe_new_views(|workspace, cx| {
-        Popover::register(workspace, cx);
-    }).detach();
+    let _ = cx
+        .observe_new_views(|workspace, cx| {
+            Popover::register(workspace, cx);
+        })
+        .detach();
 }
 
 impl Breadcrumbs {
@@ -54,43 +56,48 @@ impl Render for Breadcrumbs {
             return element;
         };
 
-        let text = if let Some(text) = segments.iter().last().clone() {
-            text.text.clone()
-        } else {
-            "".into()
-        };
-        let path = PathBuf::from(text);
-
-        let prefix_end_ix = cmp::min(segments.len(), MAX_SEGMENTS / 2);
-        let suffix_start_ix = cmp::max(
-            prefix_end_ix,
-            segments.len().saturating_sub(MAX_SEGMENTS / 2),
-        );
-        if suffix_start_ix > prefix_end_ix {
-            segments.splice(
-                prefix_end_ix..suffix_start_ix,
-                Some(BreadcrumbText {
-                    text: "⋯".into(),
-                    highlights: None,
-                    font: None,
-                }),
-            );
+        for segment in segments {
+            match segment {
+                BreadcrumbItem::FileItem { path, root, font } => {}
+                BreadcrumbItem::OutLineItem {
+                    text,
+                    highlights,
+                    font,
+                } => {}
+            }
         }
 
-        let highlighted_segments = segments.into_iter().map(|segment| {
-            let mut text_style = cx.text_style();
-            if let Some(font) = segment.font {
-                text_style.font_family = font.family;
-                text_style.font_features = font.features;
-                text_style.font_style = font.style;
-                text_style.font_weight = font.weight;
-            }
-            text_style.color = Color::Muted.color(cx);
+        // let prefix_end_ix = cmp::min(segments.len(), MAX_SEGMENTS / 2);
+        // let suffix_start_ix = cmp::max(
+        //     prefix_end_ix,
+        //     segments.len().saturating_sub(MAX_SEGMENTS / 2),
+        // );
+        // if suffix_start_ix > prefix_end_ix {
+        //     segments.splice(
+        //         prefix_end_ix..suffix_start_ix,
+        //         Some(BreadcrumbItem::FileItem {
+        //             text: "⋯".into(),
+        //             highlights: None,
+        //             font: None,
+        //         }),
+        //     );
+        // }
 
-            StyledText::new(segment.text.replace('\n', "␤"))
-                .with_highlights(&text_style, segment.highlights.unwrap_or_default())
-                .into_any()
-        });
+        // let highlighted_segments = segments.into_iter().map(|segment| {
+        //     let mut text_style = cx.text_style();
+        //     if let Some(font) = segment.font {
+        //         text_style.font_family = font.family;
+        //         text_style.font_features = font.features;
+        //         text_style.font_style = font.style;
+        //         text_style.font_weight = font.weight;
+        //     }
+        //     text_style.color = Color::Muted.color(cx);
+
+        //     StyledText::new(segment.text.replace('\n', "␤"))
+        //         .with_highlights(&text_style, segment.highlights.unwrap_or_default())
+        //         .into_any()
+        // });
+        let highlighted_segments = vec![StyledText::new("hello").into_any_element()].into_iter();
         let breadcrumbs = Itertools::intersperse_with(highlighted_segments, || {
             Label::new("›").color(Color::Placeholder).into_any_element()
         });
