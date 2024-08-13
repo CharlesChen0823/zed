@@ -2,8 +2,8 @@ mod popover;
 mod scrollbar;
 use editor::Editor;
 use gpui::{
-    actions, AppContext, Element, EventEmitter, IntoElement, ParentElement, Render, StyledText,
-    Subscription, ViewContext, WeakView,
+    actions, Action, AppContext, Element, EventEmitter, IntoElement, ParentElement, Render,
+    StyledText, Subscription, ViewContext, WeakView,
 };
 use itertools::Itertools;
 use popover::*;
@@ -47,91 +47,76 @@ impl EventEmitter<ToolbarItemEvent> for Breadcrumbs {}
 
 impl Render for Breadcrumbs {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        const MAX_SEGMENTS: usize = 12;
         let element = h_flex().text_ui(cx);
         let Some(active_item) = self.active_item.as_ref() else {
             return element;
         };
-        let Some(mut segments) = active_item.breadcrumbs(cx.theme(), cx) else {
+        let Some(segments) = active_item.breadcrumbs(cx.theme(), cx) else {
             return element;
         };
 
+        let mut path_click_button = Vec::new();
+        let mut outline_button = Vec::new();
+
         for segment in segments {
             match segment {
-                BreadcrumbItem::FileItem { path, root, font } => {}
+                BreadcrumbItem::FileItem { path, root, font } => {
+                    let mut path = path.split("/");
+                    let id = 1;
+                    let button = ToggleButton::new(id, "path")
+                        .on_click(
+                            cx.listener(|_, _, cx| cx.dispatch_action(TogglePopover.boxed_clone())),
+                        )
+                        .into_any_element();
+                    path_click_button.push(button);
+                }
                 BreadcrumbItem::OutLineItem {
                     text,
                     highlights,
                     font,
-                } => {}
+                } => {
+                    let mut text_style = cx.text_style();
+                    text_style.font_family = font.family;
+                    text_style.font_features = font.features;
+                    text_style.font_style = font.style;
+                    text_style.font_weight = font.weight;
+                    text_style.color = Color::Muted.color(cx);
+                    let style_text = StyledText::new(text.replace('\n', "␤"))
+                        .with_highlights(&text_style, highlights)
+                        .into_any();
+                    outline_button.push(style_text);
+                }
             }
         }
 
-        // let prefix_end_ix = cmp::min(segments.len(), MAX_SEGMENTS / 2);
-        // let suffix_start_ix = cmp::max(
-        //     prefix_end_ix,
-        //     segments.len().saturating_sub(MAX_SEGMENTS / 2),
-        // );
-        // if suffix_start_ix > prefix_end_ix {
-        //     segments.splice(
-        //         prefix_end_ix..suffix_start_ix,
-        //         Some(BreadcrumbItem::FileItem {
-        //             text: "⋯".into(),
-        //             highlights: None,
-        //             font: None,
-        //         }),
-        //     );
-        // }
-
-        // let highlighted_segments = segments.into_iter().map(|segment| {
-        //     let mut text_style = cx.text_style();
-        //     if let Some(font) = segment.font {
-        //         text_style.font_family = font.family;
-        //         text_style.font_features = font.features;
-        //         text_style.font_style = font.style;
-        //         text_style.font_weight = font.weight;
-        //     }
-        //     text_style.color = Color::Muted.color(cx);
-
-        //     StyledText::new(segment.text.replace('\n', "␤"))
-        //         .with_highlights(&text_style, segment.highlights.unwrap_or_default())
-        //         .into_any()
-        // });
-        let highlighted_segments = vec![StyledText::new("hello").into_any_element()].into_iter();
+        path_click_button.extend(outline_button);
+        let highlighted_segments = path_click_button.into_iter();
         let breadcrumbs = Itertools::intersperse_with(highlighted_segments, || {
             Label::new("›").color(Color::Placeholder).into_any_element()
         });
-
-        let workspace = self.workspace.clone();
 
         let breadcrumbs_stack = h_flex().gap_1().children(breadcrumbs);
         match active_item
             .downcast::<Editor>()
             .map(|editor| editor.downgrade())
         {
-            Some(editor) => {
-                element
-                    .child(ToggleButton::new("active panel", "active panel").on_click(
-                        cx.listener(|_, _, cx| cx.dispatch_action(Box::new(TogglePopover))),
-                    ))
-                    .child(
-                        ButtonLike::new("toggle outline view")
-                            .child(breadcrumbs_stack)
-                            .style(ButtonStyle::Transparent)
-                            .on_click(move |_, cx| {
-                                if let Some(editor) = editor.upgrade() {
-                                    outline::toggle(editor, &editor::actions::ToggleOutline, cx)
-                                }
-                            })
-                            .tooltip(|cx| {
-                                Tooltip::for_action(
-                                    "Show symbol outline",
-                                    &editor::actions::ToggleOutline,
-                                    cx,
-                                )
-                            }),
-                    )
-            }
+            Some(editor) => element.child(
+                ButtonLike::new("toggle outline view")
+                    .child(breadcrumbs_stack)
+                    .style(ButtonStyle::Transparent)
+                    .on_click(move |_, cx| {
+                        if let Some(editor) = editor.upgrade() {
+                            outline::toggle(editor, &editor::actions::ToggleOutline, cx)
+                        }
+                    })
+                    .tooltip(|cx| {
+                        Tooltip::for_action(
+                            "Show symbol outline",
+                            &editor::actions::ToggleOutline,
+                            cx,
+                        )
+                    }),
+            ),
             None => element
                 // Match the height of the `ButtonLike` in the other arm.
                 .h(rems_from_px(22.))
