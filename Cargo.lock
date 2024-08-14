@@ -1759,6 +1759,7 @@ dependencies = [
  "menu",
  "outline",
  "project",
+ "serde",
  "theme",
  "ui",
  "util",

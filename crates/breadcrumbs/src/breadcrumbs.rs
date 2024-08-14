@@ -2,26 +2,31 @@ mod popover;
 mod scrollbar;
 use editor::Editor;
 use gpui::{
-    actions, Action, AppContext, Element, EventEmitter, IntoElement, ParentElement, Render,
-    StyledText, Subscription, ViewContext, WeakView,
+    impl_actions, AppContext, Element, EventEmitter, IntoElement, ParentElement, Render,
+    StyledText, Subscription, ViewContext,
 };
 use itertools::Itertools;
 use popover::*;
+use serde::Deserialize;
 use std::path::PathBuf;
 use theme::ActiveTheme;
 use ui::{prelude::*, ButtonLike, ButtonStyle, Label, ToggleButton, Tooltip};
 use workspace::{
     item::{BreadcrumbItem, ItemEvent, ItemHandle},
-    ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView, Workspace,
+    ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
 };
 
-actions!(breadcrumbs, [TogglePopover]);
+#[derive(PartialEq, Clone, Deserialize, Default)]
+struct TogglePopover {
+    pub(crate) target_path: PathBuf,
+}
+
+impl_actions!(breadcrumbs, [TogglePopover]);
 
 pub struct Breadcrumbs {
     pane_focused: bool,
     active_item: Option<Box<dyn ItemHandle>>,
     subscription: Option<Subscription>,
-    workspace: WeakView<Workspace>,
 }
 
 pub fn init(cx: &mut AppContext) {
@@ -33,12 +38,11 @@ pub fn init(cx: &mut AppContext) {
 }
 
 impl Breadcrumbs {
-    pub fn new(workspace: &mut Workspace) -> Self {
+    pub fn new() -> Self {
         Self {
             pane_focused: false,
             active_item: Default::default(),
             subscription: Default::default(),
-            workspace: workspace.weak_handle(),
         }
     }
 }
@@ -60,19 +64,22 @@ impl Render for Breadcrumbs {
 
         for segment in segments.into_iter() {
             match segment {
-                BreadcrumbItem::FileItem { path, root, font } => {
+                BreadcrumbItem::FileItem { path, root, .. } => {
                     let mut pre = PathBuf::from("");
                     let mut id = 1;
                     let root_path = PathBuf::from(root.clone());
                     for path in &path.split('/').collect_vec() {
-                        let abs_path = PathBuf::from(root_path.clone())
+                        let root_path = root_path.clone();
+                        let root = PathBuf::from(root_path.clone())
                             .join(pre.clone())
                             .join(path);
                         pre = pre.join(path);
                         let button = ToggleButton::new(id, path.to_string())
-                            .on_click(cx.listener(|_, _, cx| {
-                                cx.dispatch_action(TogglePopover.boxed_clone())
-                            }))
+                            .on_click(move |_, cx| {
+                                cx.dispatch_action(Box::new(TogglePopover {
+                                    target_path: root.clone(),
+                                }))
+                            })
                             .into_any_element();
                         path_click_button.push(button);
                         id += 1;

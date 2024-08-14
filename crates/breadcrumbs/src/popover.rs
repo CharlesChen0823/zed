@@ -72,18 +72,14 @@ impl ModalView for Popover {}
 impl Popover {
     pub fn register(workspace: &mut Workspace, cx: &mut ViewContext<Workspace>) {
         let _handle = cx.view().downgrade();
-        workspace.register_action(move |workspace, _: &TogglePopover, cx| {
+        workspace.register_action(move |workspace, toggle_popover: &TogglePopover, cx| {
             let project = workspace.project().clone();
+            let targe_path = toggle_popover.target_path.clone();
             cx.spawn(|workspace, mut cx| async move {
                 workspace.update(&mut cx, |workspace, cx| {
                     let weak_workspace = cx.view().downgrade();
                     workspace.toggle_modal(cx, move |cx| {
-                        Popover::new(
-                            weak_workspace,
-                            project,
-                            "/home/charles/program/python/django/django/db/transaction.py".into(),
-                            cx,
-                        )
+                        Popover::new(weak_workspace, project, targe_path, cx)
                     });
                 })?;
                 anyhow::Ok(())
