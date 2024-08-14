@@ -7,7 +7,7 @@ use gpui::{
 };
 use itertools::Itertools;
 use popover::*;
-use std::{cmp, path::PathBuf};
+use std::path::PathBuf;
 use theme::ActiveTheme;
 use ui::{prelude::*, ButtonLike, ButtonStyle, Label, ToggleButton, Tooltip};
 use workspace::{
@@ -58,17 +58,25 @@ impl Render for Breadcrumbs {
         let mut path_click_button = Vec::new();
         let mut outline_button = Vec::new();
 
-        for segment in segments {
+        for segment in segments.into_iter() {
             match segment {
                 BreadcrumbItem::FileItem { path, root, font } => {
-                    let mut path = path.split("/");
-                    let id = 1;
-                    let button = ToggleButton::new(id, "path")
-                        .on_click(
-                            cx.listener(|_, _, cx| cx.dispatch_action(TogglePopover.boxed_clone())),
-                        )
-                        .into_any_element();
-                    path_click_button.push(button);
+                    let mut pre = PathBuf::from("");
+                    let mut id = 1;
+                    let root_path = PathBuf::from(root.clone());
+                    for path in &path.split('/').collect_vec() {
+                        let abs_path = PathBuf::from(root_path.clone())
+                            .join(pre.clone())
+                            .join(path);
+                        pre = pre.join(path);
+                        let button = ToggleButton::new(id, path.to_string())
+                            .on_click(cx.listener(|_, _, cx| {
+                                cx.dispatch_action(TogglePopover.boxed_clone())
+                            }))
+                            .into_any_element();
+                        path_click_button.push(button);
+                        id += 1;
+                    }
                 }
                 BreadcrumbItem::OutLineItem {
                     text,
