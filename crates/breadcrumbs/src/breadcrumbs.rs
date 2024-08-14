@@ -74,12 +74,14 @@ impl Render for Breadcrumbs {
                             .join(pre.clone())
                             .join(path);
                         pre = pre.join(path);
+                        let display = format!("{}", root.display());
                         let button = ToggleButton::new(id, path.to_string())
                             .on_click(move |_, cx| {
                                 cx.dispatch_action(Box::new(TogglePopover {
                                     target_path: root.clone(),
                                 }))
                             })
+                            .tooltip(move |cx| Tooltip::text(format!("{}", display), cx))
                             .into_any_element();
                         path_click_button.push(button);
                         id += 1;
