@@ -86,7 +86,7 @@ pub struct UniformListScrollHandle(pub Rc<RefCell<UniformListScrollState>>);
 #[allow(missing_docs)]
 pub struct UniformListScrollState {
     pub base_handle: ScrollHandle,
-    pub deferred_scroll_to_item: Option<usize>,
+    pub deferred_scroll_to_item: Option<(usize, Option<f32>)>,
     pub last_item_height: Option<Pixels>,
 }
 
@@ -102,14 +102,21 @@ impl UniformListScrollHandle {
 
     /// Scroll the list to the given item index.
     pub fn scroll_to_item(&mut self, ix: usize) {
-        self.0.borrow_mut().deferred_scroll_to_item = Some(ix);
+        self.0.borrow_mut().deferred_scroll_to_item = Some((ix, None));
+    }
+
+    /// Scroll the list to the given item index with relative top.
+    pub fn scroll_to_item_relative_top(&mut self, ix: usize, relative: Option<f32>) {
+        self.0.borrow_mut().deferred_scroll_to_item = Some((ix, relative));
     }
 
     /// Get the index of the topmost visible child.
     pub fn logical_scroll_top_index(&self) -> usize {
         let this = self.0.borrow();
-        this.deferred_scroll_to_item
-            .unwrap_or_else(|| this.base_handle.logical_scroll_top().0)
+        match this.deferred_scroll_to_item {
+            Some((idx, _)) => idx,
+            None => this.base_handle.logical_scroll_top().0,
+        }
     }
 }
 
@@ -236,13 +243,17 @@ impl Element for UniformList {
                         scroll_offset.y = min_scroll_offset;
                     }
 
-                    if let Some(ix) = shared_scroll_to_item {
+                    if let Some((ix, relative)) = shared_scroll_to_item {
                         let list_height = padded_bounds.size.height;
                         let mut updated_scroll_offset = shared_scroll_offset.borrow_mut();
                         let item_top = item_height * ix + padding.top;
                         let item_bottom = item_top + item_height;
                         let scroll_top = -updated_scroll_offset.y;
-                        if item_top < scroll_top + padding.top {
+                        if relative.is_some() {
+                            updated_scroll_offset.y = -(item_top
+                                - (list_height - item_height) * relative.unwrap().clamp(0.0, 1.0))
+                                + padding.top;
+                        } else if item_top < scroll_top + padding.top {
                             updated_scroll_offset.y = -(item_top) + padding.top;
                         } else if item_bottom > scroll_top + list_height - padding.bottom {
                             updated_scroll_offset.y = -(item_bottom - list_height) - padding.bottom;

@@ -1270,6 +1270,14 @@ impl ProjectPanel {
         }
     }
 
+    fn scroll_center(&mut self, cx: &mut ViewContext<Self>) {
+        if let Some((_, _, index)) = self.selection.and_then(|s| self.index_for_selection(s)) {
+            self.scroll_handle
+                .scroll_to_item_relative_top(index, Some(0.5));
+            cx.notify();
+        }
+    }
+
     fn autoscroll(&mut self, cx: &mut ViewContext<Self>) {
         if let Some((_, _, index)) = self.selection.and_then(|s| self.index_for_selection(s)) {
             self.scroll_handle.scroll_to_item(index);
@@ -2639,7 +2647,7 @@ impl ProjectPanel {
             self.marked_entries.clear();
             self.expand_entry(worktree_id, entry_id, cx);
             self.update_visible_entries(Some((worktree_id, entry_id)), cx);
-            self.autoscroll(cx);
+            self.scroll_center(cx);
             cx.notify();
         }
     }
