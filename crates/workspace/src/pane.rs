@@ -250,7 +250,8 @@ pub struct Pane {
         Option<Box<dyn WeakItemHandle>>,
     ),
     focus_handle: FocusHandle,
-    items: Vec<Box<dyn ItemHandle>>,
+    items: HashMap<EntityId, Box<dyn ItemHandle>>,
+    opened_items: Vec<Box<dyn ItemHandle>>,
     activation_history: Vec<ActivationHistoryEntry>,
     next_activation_timestamp: Arc<AtomicUsize>,
     zoomed: bool,
@@ -362,7 +363,8 @@ impl Pane {
         Self {
             alternate_file_items: (None, None),
             focus_handle,
-            items: Vec::new(),
+            items: Default::default(),
+            opened_items: Vec::new(),
             activation_history: Vec::new(),
             next_activation_timestamp: next_timestamp.clone(),
             was_focused: false,
@@ -699,13 +701,13 @@ impl Pane {
 
     pub fn preview_item(&self) -> Option<Box<dyn ItemHandle>> {
         self.preview_item_id
-            .and_then(|id| self.items.iter().find(|item| item.item_id() == id))
+            .and_then(|id| self.opened_items.iter().find(|item| item.item_id() == id))
             .cloned()
     }
 
     fn preview_item_idx(&self) -> Option<usize> {
         if let Some(preview_item_id) = self.preview_item_id {
-            self.items
+            self.opened_items
                 .iter()
                 .position(|item| item.item_id() == preview_item_id)
         } else {
@@ -751,7 +753,7 @@ impl Pane {
     ) -> Box<dyn ItemHandle> {
         let mut existing_item = None;
         if let Some(project_entry_id) = project_entry_id {
-            for (index, item) in self.items.iter().enumerate() {
+            for (index, item) in self.opened_items.iter().enumerate() {
                 if item.is_singleton(cx)
                     && item.project_entry_ids(cx).as_slice() == [project_entry_id]
                 {
@@ -766,7 +768,7 @@ impl Pane {
             // If the item is already open, and the item is a preview item
             // and we are not allowing items to open as preview, mark the item as persistent.
             if let Some(preview_item_id) = self.preview_item_id {
-                if let Some(tab) = self.items.get(index) {
+                if let Some(tab) = self.opened_items.get(index) {
                     if tab.item_id() == preview_item_id && !allow_preview {
                         self.set_preview_item_id(None, cx);
                     }
@@ -803,7 +805,7 @@ impl Pane {
         self.remove_item(item_idx, false, false, cx);
         self.active_item_index = prev_active_item_index;
 
-        if item_idx < self.items.len() {
+        if item_idx < self.opened_items.len() {
             Some(item_idx)
         } else {
             None
@@ -818,6 +820,7 @@ impl Pane {
         destination_index: Option<usize>,
         cx: &mut ViewContext<Self>,
     ) {
+        self.items.insert(item.item_id(), item.clone());
         if item.is_singleton(cx) {
             if let Some(&entry_id) = item.project_entry_ids(cx).first() {
                 let project = self.project.read(cx);
@@ -840,7 +843,7 @@ impl Pane {
                 } else {
                     cmp::max(self.active_item_index + 1, self.pinned_count())
                 },
-                self.items.len(),
+                self.opened_items.len(),
             )
         };
 
@@ -851,7 +854,7 @@ impl Pane {
             None
         };
 
-        let existing_item_index = self.items.iter().position(|existing_item| {
+        let existing_item_index = self.opened_items.iter().position(|existing_item| {
             if existing_item.item_id() == item.item_id() {
                 true
             } else if existing_item.is_singleton(cx) {
@@ -877,13 +880,13 @@ impl Pane {
                 if existing_item_is_active && destination_index.is_none() {
                     insertion_index = existing_item_index;
                 } else {
-                    self.items.remove(existing_item_index);
+                    self.opened_items.remove(existing_item_index);
                     if existing_item_index < self.active_item_index {
                         self.active_item_index -= 1;
                     }
-                    insertion_index = insertion_index.min(self.items.len());
+                    insertion_index = insertion_index.min(self.opened_items.len());
 
-                    self.items.insert(insertion_index, item.clone());
+                    self.opened_items.insert(insertion_index, item.clone());
 
                     if existing_item_is_active {
                         self.active_item_index = insertion_index;
@@ -897,7 +900,7 @@ impl Pane {
 
             self.activate_item(insertion_index, activate_pane, focus_item, cx);
         } else {
-            self.items.insert(insertion_index, item.clone());
+            self.opened_items.insert(insertion_index, item.clone());
 
             if insertion_index <= self.active_item_index
                 && self.preview_item_idx() != Some(self.active_item_index)
@@ -913,25 +916,25 @@ impl Pane {
     }
 
     pub fn items_len(&self) -> usize {
-        self.items.len()
+        self.opened_items.len()
     }
 
     pub fn items(&self) -> impl DoubleEndedIterator<Item = &Box<dyn ItemHandle>> {
-        self.items.iter()
+        self.opened_items.iter()
     }
 
     pub fn items_of_type<T: Render>(&self) -> impl '_ + Iterator<Item = View<T>> {
-        self.items
+        self.opened_items
             .iter()
             .filter_map(|item| item.to_any().downcast().ok())
     }
 
     pub fn active_item(&self) -> Option<Box<dyn ItemHandle>> {
-        self.items.get(self.active_item_index).cloned()
+        self.opened_items.get(self.active_item_index).cloned()
     }
 
     pub fn pixel_position_of_cursor(&self, cx: &AppContext) -> Option<Point<Pixels>> {
-        self.items
+        self.opened_items
             .get(self.active_item_index)?
             .pixel_position_of_cursor(cx)
     }
@@ -941,7 +944,7 @@ impl Pane {
         entry_id: ProjectEntryId,
         cx: &AppContext,
     ) -> Option<Box<dyn ItemHandle>> {
-        self.items.iter().find_map(|item| {
+        self.opened_items.iter().find_map(|item| {
             if item.is_singleton(cx) && (item.project_entry_ids(cx).as_slice() == [entry_id]) {
                 Some(item.boxed_clone())
             } else {
@@ -955,7 +958,7 @@ impl Pane {
         project_path: ProjectPath,
         cx: &AppContext,
     ) -> Option<Box<dyn ItemHandle>> {
-        self.items.iter().find_map(move |item| {
+        self.opened_items.iter().find_map(move |item| {
             if item.is_singleton(cx) && (item.project_path(cx).as_slice() == [project_path.clone()])
             {
                 Some(item.boxed_clone())
@@ -970,17 +973,19 @@ impl Pane {
     }
 
     fn index_for_item_id(&self, item_id: EntityId) -> Option<usize> {
-        self.items.iter().position(|i| i.item_id() == item_id)
+        self.opened_items
+            .iter()
+            .position(|i| i.item_id() == item_id)
     }
 
     pub fn item_for_index(&self, ix: usize) -> Option<&dyn ItemHandle> {
-        self.items.get(ix).map(|i| i.as_ref())
+        self.opened_items.get(ix).map(|i| i.as_ref())
     }
 
     pub fn toggle_zoom(&mut self, _: &ToggleZoom, cx: &mut ViewContext<Self>) {
         if self.zoomed {
             cx.emit(Event::ZoomOut);
-        } else if !self.items.is_empty() {
+        } else if !self.opened_items.is_empty() {
             if !self.focus_handle.contains_focused(cx) {
                 cx.focus_self();
             }
@@ -997,12 +1002,12 @@ impl Pane {
     ) {
         use NavigationMode::{GoingBack, GoingForward};
 
-        if index < self.items.len() {
+        if index < self.opened_items.len() {
             let prev_active_item_ix = mem::replace(&mut self.active_item_index, index);
             if prev_active_item_ix != self.active_item_index
                 || matches!(self.nav_history.mode(), GoingBack | GoingForward)
             {
-                if let Some(prev_item) = self.items.get(prev_active_item_ix) {
+                if let Some(prev_item) = self.opened_items.get(prev_active_item_ix) {
                     prev_item.deactivated(cx);
                 }
             }
@@ -1010,7 +1015,7 @@ impl Pane {
                 local: activate_pane,
             });
 
-            if let Some(newly_active_item) = self.items.get(index) {
+            if let Some(newly_active_item) = self.opened_items.get(index) {
                 self.activation_history
                     .retain(|entry| entry.entity_id != newly_active_item.item_id());
                 self.activation_history.push(ActivationHistoryEntry {
@@ -1041,15 +1046,15 @@ impl Pane {
         let mut index = self.active_item_index;
         if index > 0 {
             index -= 1;
-        } else if !self.items.is_empty() {
-            index = self.items.len() - 1;
+        } else if !self.opened_items.is_empty() {
+            index = self.opened_items.len() - 1;
         }
         self.activate_item(index, activate_pane, activate_pane, cx);
     }
 
     pub fn activate_next_item(&mut self, activate_pane: bool, cx: &mut ViewContext<Self>) {
         let mut index = self.active_item_index;
-        if index + 1 < self.items.len() {
+        if index + 1 < self.opened_items.len() {
             index += 1;
         } else {
             index = 0;
@@ -1063,17 +1068,17 @@ impl Pane {
             return;
         }
 
-        self.items.swap(index, index - 1);
+        self.opened_items.swap(index, index - 1);
         self.activate_item(index - 1, true, true, cx);
     }
 
     pub fn swap_item_right(&mut self, cx: &mut ViewContext<Self>) {
         let index = self.active_item_index;
-        if index + 1 == self.items.len() {
+        if index + 1 == self.opened_items.len() {
             return;
         }
 
-        self.items.swap(index, index + 1);
+        self.opened_items.swap(index, index + 1);
         self.activate_item(index + 1, true, true, cx);
     }
 
@@ -1082,7 +1087,7 @@ impl Pane {
         action: &CloseActiveItem,
         cx: &mut ViewContext<Self>,
     ) -> Option<Task<Result<()>>> {
-        if self.items.is_empty() {
+        if self.opened_items.is_empty() {
             // Close the window when there's no active items to close, if configured
             if WorkspaceSettings::get_global(cx)
                 .when_closing_with_no_tabs
@@ -1093,7 +1098,7 @@ impl Pane {
 
             return None;
         }
-        let active_item_id = self.items[self.active_item_index].item_id();
+        let active_item_id = self.opened_items[self.active_item_index].item_id();
         Some(self.close_item_by_id(
             active_item_id,
             action.save_intent.unwrap_or(SaveIntent::Close),
@@ -1115,11 +1120,11 @@ impl Pane {
         action: &CloseInactiveItems,
         cx: &mut ViewContext<Self>,
     ) -> Option<Task<Result<()>>> {
-        if self.items.is_empty() {
+        if self.opened_items.is_empty() {
             return None;
         }
 
-        let active_item_id = self.items[self.active_item_index].item_id();
+        let active_item_id = self.opened_items[self.active_item_index].item_id();
         Some(self.close_items(
             cx,
             action.save_intent.unwrap_or(SaveIntent::Close),
@@ -1147,10 +1152,10 @@ impl Pane {
         _: &CloseItemsToTheLeft,
         cx: &mut ViewContext<Self>,
     ) -> Option<Task<Result<()>>> {
-        if self.items.is_empty() {
+        if self.opened_items.is_empty() {
             return None;
         }
-        let active_item_id = self.items[self.active_item_index].item_id();
+        let active_item_id = self.opened_items[self.active_item_index].item_id();
         Some(self.close_items_to_the_left_by_id(active_item_id, cx))
     }
 
@@ -1174,10 +1179,10 @@ impl Pane {
         _: &CloseItemsToTheRight,
         cx: &mut ViewContext<Self>,
     ) -> Option<Task<Result<()>>> {
-        if self.items.is_empty() {
+        if self.opened_items.is_empty() {
             return None;
         }
-        let active_item_id = self.items[self.active_item_index].item_id();
+        let active_item_id = self.opened_items[self.active_item_index].item_id();
         Some(self.close_items_to_the_right_by_id(active_item_id, cx))
     }
 
@@ -1202,7 +1207,7 @@ impl Pane {
         action: &CloseAllItems,
         cx: &mut ViewContext<Self>,
     ) -> Option<Task<Result<()>>> {
-        if self.items.is_empty() {
+        if self.opened_items.is_empty() {
             return None;
         }
 
@@ -1259,7 +1264,7 @@ impl Pane {
         // Find the items to close.
         let mut items_to_close = Vec::new();
         let mut dirty_items = Vec::new();
-        for item in &self.items {
+        for item in &self.opened_items {
             if should_close(item.item_id()) {
                 items_to_close.push(item.boxed_clone());
                 if item.is_dirty(cx) {
@@ -1351,7 +1356,7 @@ impl Pane {
                 // Remove the item from the pane.
                 pane.update(&mut cx, |pane, cx| {
                     if let Some(item_ix) = pane
-                        .items
+                        .opened_items
                         .iter()
                         .position(|i| i.item_id() == item.item_id())
                     {
@@ -1402,7 +1407,7 @@ impl Pane {
     ) {
         let activate_on_close = &ItemSettings::get_global(cx).activate_on_close;
         self.activation_history
-            .retain(|entry| entry.entity_id != self.items[item_index].item_id());
+            .retain(|entry| entry.entity_id != self.opened_items[item_index].item_id());
 
         if self.is_tab_pinned(item_index) {
             self.pinned_tab_count -= 1;
@@ -1413,16 +1418,19 @@ impl Pane {
                     .activation_history
                     .pop()
                     .and_then(|last_activated_item| {
-                        self.items.iter().enumerate().find_map(|(index, item)| {
-                            (item.item_id() == last_activated_item.entity_id).then_some(index)
-                        })
+                        self.opened_items
+                            .iter()
+                            .enumerate()
+                            .find_map(|(index, item)| {
+                                (item.item_id() == last_activated_item.entity_id).then_some(index)
+                            })
                     })
                     // We didn't have a valid activation history entry, so fallback
                     // to activating the item to the left
-                    .unwrap_or_else(|| item_index.min(self.items.len()).saturating_sub(1)),
+                    .unwrap_or_else(|| item_index.min(self.opened_items.len()).saturating_sub(1)),
                 ActivateOnClose::Neighbour => {
                     self.activation_history.pop();
-                    if item_index + 1 < self.items.len() {
+                    if item_index + 1 < self.opened_items.len() {
                         item_index + 1
                     } else {
                         item_index.saturating_sub(1)
@@ -1431,7 +1439,7 @@ impl Pane {
             };
 
             let should_activate = activate_pane || self.has_focus(cx);
-            if self.items.len() == 1 && should_activate {
+            if self.opened_items.len() == 1 && should_activate {
                 self.focus_handle.focus(cx);
             } else {
                 self.activate_item(index_to_activate, should_activate, should_activate, cx);
@@ -1440,12 +1448,12 @@ impl Pane {
 
         cx.emit(Event::RemoveItem { idx: item_index });
 
-        let item = self.items.remove(item_index);
+        let item = self.opened_items.remove(item_index);
 
         cx.emit(Event::RemovedItem {
             item_id: item.item_id(),
         });
-        if self.items.is_empty() {
+        if self.opened_items.is_empty() {
             item.deactivated(cx);
             if close_pane_if_empty {
                 self.update_toolbar(cx);
@@ -1490,7 +1498,7 @@ impl Pane {
                 .remove(&item.item_id());
         }
 
-        if self.items.is_empty() && close_pane_if_empty && self.zoomed {
+        if self.opened_items.is_empty() && close_pane_if_empty && self.zoomed {
             cx.emit(Event::ZoomOut);
         }
 
@@ -1689,7 +1697,16 @@ impl Pane {
         entry_id: ProjectEntryId,
         cx: &mut ViewContext<Pane>,
     ) -> Option<()> {
-        let (item_index_to_delete, item_id) = self.items().enumerate().find_map(|(i, item)| {
+        let item = self
+            .items
+            .values()
+            .find(|item| item.project_entry_ids(cx).as_slice() == [entry_id])
+            .map(|p| p.clone());
+        if let Some(item) = item {
+            self.items.retain(|_, v| !(v.item_id() == item.item_id()));
+            self.nav_history.remove_item(item.item_id());
+        }
+        let (item_index_to_delete, _) = self.items().enumerate().find_map(|(i, item)| {
             if item.is_singleton(cx) && item.project_entry_ids(cx).as_slice() == [entry_id] {
                 Some((i, item.item_id()))
             } else {
@@ -1698,14 +1715,13 @@ impl Pane {
         })?;
 
         self.remove_item(item_index_to_delete, false, true, cx);
-        self.nav_history.remove_item(item_id);
 
         Some(())
     }
 
     fn update_toolbar(&mut self, cx: &mut ViewContext<Self>) {
         let active_item = self
-            .items
+            .opened_items
             .get(self.active_item_index)
             .map(|item| item.as_ref());
         self.toolbar.update(cx, |toolbar, cx| {
@@ -1773,7 +1789,7 @@ impl Pane {
     }
 
     fn toggle_pin_tab(&mut self, _: &TogglePinTab, cx: &mut ViewContext<'_, Self>) {
-        if self.items.is_empty() {
+        if self.opened_items.is_empty() {
             return;
         }
         let active_tab_ix = self.active_item_index();
@@ -1869,7 +1885,7 @@ impl Pane {
         let indicator = render_item_indicator(item.boxed_clone(), cx);
         let item_id = item.item_id();
         let is_first_item = ix == 0;
-        let is_last_item = ix == self.items.len() - 1;
+        let is_last_item = ix == self.opened_items.len() - 1;
         let is_pinned = self.is_tab_pinned(ix);
         let position_relative_to_active_item = ix.cmp(&self.active_item_index);
 
@@ -1995,7 +2011,7 @@ impl Pane {
             );
 
         let single_entry_to_resolve = {
-            let item_entries = self.items[ix].project_entry_ids(cx);
+            let item_entries = self.opened_items[ix].project_entry_ids(cx);
             if item_entries.len() == 1 {
                 Some(item_entries[0])
             } else {
@@ -2190,10 +2206,10 @@ impl Pane {
             });
 
         let mut tab_items = self
-            .items
+            .opened_items
             .iter()
             .enumerate()
-            .zip(tab_details(&self.items, cx))
+            .zip(tab_details(&self.opened_items, cx))
             .map(|((ix, item), detail)| self.render_tab(ix, &**item, detail, &focus_handle, cx))
             .collect::<Vec<_>>();
 
@@ -2246,7 +2262,7 @@ impl Pane {
                             })
                             .on_drop(cx.listener(move |this, dragged_tab: &DraggedTab, cx| {
                                 this.drag_split_direction = None;
-                                this.handle_tab_drop(dragged_tab, this.items.len(), cx)
+                                this.handle_tab_drop(dragged_tab, this.opened_items.len(), cx)
                             }))
                             .on_drop(cx.listener(move |this, selection: &DraggedSelection, cx| {
                                 this.drag_split_direction = None;
@@ -2365,7 +2381,7 @@ impl Pane {
                         if let Some(old_index) = old_ix {
                             to_pane.update(cx, |this, _| {
                                 if old_index < this.pinned_tab_count
-                                    && (ix == this.items.len() || ix > this.pinned_tab_count)
+                                    && (ix == this.opened_items.len() || ix > this.pinned_tab_count)
                                 {
                                     this.pinned_tab_count -= 1;
                                 } else if this.has_pinned_tabs()
@@ -2603,7 +2619,7 @@ impl Render for Pane {
                 pane.activate_item(action.0, true, true, cx);
             }))
             .on_action(cx.listener(|pane: &mut Pane, _: &ActivateLastItem, cx| {
-                pane.activate_item(pane.items.len() - 1, true, true, cx);
+                pane.activate_item(pane.opened_items.len() - 1, true, true, cx);
             }))
             .on_action(cx.listener(|pane: &mut Pane, _: &ActivatePrevItem, cx| {
                 pane.activate_prev_item(true, cx);
@@ -3572,7 +3588,7 @@ mod tests {
         cx: &mut VisualTestContext,
     ) -> [Box<View<TestItem>>; COUNT] {
         pane.update(cx, |pane, cx| {
-            pane.items.clear();
+            pane.opened_items.clear();
             let mut active_item_index = 0;
 
             let mut index = 0;
@@ -3602,7 +3618,7 @@ mod tests {
     ) {
         pane.update(cx, |pane, cx| {
             let actual_states = pane
-                .items
+                .opened_items
                 .iter()
                 .enumerate()
                 .map(|(ix, item)| {
