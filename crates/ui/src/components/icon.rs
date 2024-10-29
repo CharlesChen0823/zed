@@ -213,6 +213,7 @@ pub enum IconName {
     LineHeight,
     Link,
     ListTree,
+    ListX,
     MagnifyingGlass,
     MailOpen,
     Maximize,
@@ -290,6 +291,12 @@ pub enum IconName {
     ZedAssistant,
     ZedAssistantFilled,
     ZedXCopilot,
+}
+
+impl From<IconName> for Icon {
+    fn from(icon: IconName) -> Self {
+        Icon::new(icon)
+    }
 }
 
 #[derive(IntoElement)]
