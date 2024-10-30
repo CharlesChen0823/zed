@@ -10493,7 +10493,7 @@ impl Editor {
 
     fn cancel_language_server_work(
         &mut self,
-        _: &CancelLanguageServerWork,
+        _: &actions::CancelLanguageServerWork,
         cx: &mut ViewContext<Self>,
     ) {
         if let Some(project) = self.project.clone() {
