@@ -285,6 +285,7 @@ pub enum IconName {
     Update,
     UserGroup,
     Visible,
+    Wand,
     Warning,
     WholeWord,
     XCircle,
