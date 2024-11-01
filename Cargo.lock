@@ -14784,7 +14784,6 @@ dependencies = [
  "parking_lot",
  "postage",
  "project",
- "release_channel",
  "remote",
  "schemars",
  "serde",
