@@ -13297,7 +13297,7 @@ fn wrap_with_prefix(
         is_whitespace,
     } in tokenizer
     {
-        if current_line_len + grapheme_len > wrap_column {
+        if current_line_len + grapheme_len > wrap_column && current_line_len != line_prefix_len {
             wrapped_text.push_str(current_line.trim_end());
             wrapped_text.push('\n');
             current_line.truncate(line_prefix.len());
@@ -13323,6 +13323,15 @@ fn wrap_with_prefix(
 
 #[test]
 fn test_wrap_with_prefix() {
+    assert_eq!(
+        wrap_with_prefix(
+            "# ".to_string(),
+            "abcdefg".to_string(),
+            4,
+            NonZeroU32::new(4).unwrap()
+        ),
+        "# abcdefg"
+    );
     assert_eq!(
         wrap_with_prefix(
             "".to_string(),
