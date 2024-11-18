@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use anyhow::{anyhow, Result};
-use assistant::{ContextStore, PromptBuilder};
+use assistant::{ContextStore, PromptBuilder, SlashCommandWorkingSet, ToolWorkingSet};
 use call::{room, ActiveCall, ParticipantLocation, Room};
 use client::{User, RECEIVE_TIMEOUT};
 use collections::{HashMap, HashSet};
@@ -15,7 +15,7 @@ use futures::{channel::mpsc, StreamExt as _};
 use git::repository::GitFileStatus;
 use gpui::{
     px, size, AppContext, BackgroundExecutor, Model, Modifiers, MouseButton, MouseDownEvent,
-    TestAppContext, UpdateGlobal,
+    TestAppContext, TestScreenCaptureSource, UpdateGlobal,
 };
 use language::{
     language_settings::{
@@ -24,7 +24,6 @@ use language::{
     tree_sitter_rust, tree_sitter_typescript, Diagnostic, DiagnosticEntry, FakeLspAdapter,
     Language, LanguageConfig, LanguageMatcher, LineEnding, OffsetRangeExt, Point, Rope,
 };
-use live_kit_client::MacOSDisplay;
 use lsp::LanguageServerId;
 use parking_lot::Mutex;
 use project::lsp_store::FormatTarget;
@@ -241,15 +240,15 @@ async fn test_basic_calls(
     );
 
     // User A shares their screen
-    let display = MacOSDisplay::new();
+    let display = TestScreenCaptureSource::new();
     let events_b = active_call_events(cx_b);
     let events_c = active_call_events(cx_c);
+    cx_a.set_screen_capture_sources(vec![display]);
     active_call_a
         .update(cx_a, |call, cx| {
-            call.room().unwrap().update(cx, |room, cx| {
-                room.set_display_sources(vec![display.clone()]);
-                room.share_screen(cx)
-            })
+            call.room()
+                .unwrap()
+                .update(cx, |room, cx| room.share_screen(cx))
         })
         .await
         .unwrap();
@@ -1942,7 +1941,7 @@ async fn test_mute_deafen(
     room_a.read_with(cx_a, |room, _| assert!(!room.is_muted()));
     room_b.read_with(cx_b, |room, _| assert!(!room.is_muted()));
 
-    // Users A and B are both muted.
+    // Users A and B are both unmuted.
     assert_eq!(
         participant_audio_state(&room_a, cx_a),
         &[ParticipantAudioState {
@@ -2074,7 +2073,7 @@ async fn test_mute_deafen(
                     audio_tracks_playing: participant
                         .audio_tracks
                         .values()
-                        .map(|track| track.is_playing())
+                        .map(|(track, _)| track.rtc_track().enabled())
                         .collect(),
                 })
                 .collect::<Vec<_>>()
@@ -5130,11 +5129,10 @@ async fn test_lsp_hover(
         });
         let new_server_name = new_server.server.name();
         assert!(
-            !servers_with_hover_requests.contains_key(new_server_name),
+            !servers_with_hover_requests.contains_key(&new_server_name),
             "Unexpected: initialized server with the same name twice. Name: `{new_server_name}`"
         );
-        let new_server_name = new_server_name.to_string();
-        match new_server_name.as_str() {
+        match new_server_name.as_ref() {
             "CrabLang-ls" => {
                 servers_with_hover_requests.insert(
                     new_server_name.clone(),
@@ -6058,13 +6056,13 @@ async fn test_join_call_after_screen_was_shared(
     assert_eq!(call_b.calling_user.github_login, "user_a");
 
     // User A shares their screen
-    let display = MacOSDisplay::new();
+    let display = TestScreenCaptureSource::new();
+    cx_a.set_screen_capture_sources(vec![display]);
     active_call_a
         .update(cx_a, |call, cx| {
-            call.room().unwrap().update(cx, |room, cx| {
-                room.set_display_sources(vec![display.clone()]);
-                room.share_screen(cx)
-            })
+            call.room()
+                .unwrap()
+                .update(cx, |room, cx| room.share_screen(cx))
         })
         .await
         .unwrap();
@@ -6487,17 +6485,35 @@ async fn test_context_collaboration_with_reconnect(
         assert_eq!(project.collaborators().len(), 1);
     });
 
+    cx_a.update(context_servers::init);
+    cx_b.update(context_servers::init);
     let prompt_builder = Arc::new(PromptBuilder::new(None).unwrap());
     let context_store_a = cx_a
-        .update(|cx| ContextStore::new(project_a.clone(), prompt_builder.clone(), cx))
+        .update(|cx| {
+            ContextStore::new(
+                project_a.clone(),
+                prompt_builder.clone(),
+                Arc::new(SlashCommandWorkingSet::default()),
+                Arc::new(ToolWorkingSet::default()),
+                cx,
+            )
+        })
         .await
         .unwrap();
     let context_store_b = cx_b
-        .update(|cx| ContextStore::new(project_b.clone(), prompt_builder.clone(), cx))
+        .update(|cx| {
+            ContextStore::new(
+                project_b.clone(),
+                prompt_builder.clone(),
+                Arc::new(SlashCommandWorkingSet::default()),
+                Arc::new(ToolWorkingSet::default()),
+                cx,
+            )
+        })
         .await
         .unwrap();
 
-    // Client A creates a new context.
+    // Client A creates a new chats.
     let context_a = context_store_a.update(cx_a, |store, cx| store.create(cx));
     executor.run_until_parked();
 
