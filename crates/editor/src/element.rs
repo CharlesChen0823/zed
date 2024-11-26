@@ -509,6 +509,32 @@ impl EditorElement {
 
         let mut click_count = event.click_count;
         let mut modifiers = event.modifiers;
+        let snapshot = &position_map.snapshot;
+        let point_for_position =
+            position_map.point_for_position(text_hitbox.bounds, event.position);
+        let mouse_point = point_for_position.exact_unclipped.to_point(&snapshot.display_snapshot);
+
+        fn contains(s: &Selection<Point>, p: &Point) -> bool {
+            if p.row < s.start.row || p.row > s.end.row {
+                return false;
+            }
+            if p.row == s.start.row && p.column < s.start.column {
+                return false;
+            }
+            if p.row == s.end.row && p.column > s.end.column {
+                return false;
+            }
+            true
+        }
+
+        let has_selections = editor
+            .selections
+            .all::<Point>(cx)
+            .into_iter()
+            .any(|s| !s.is_empty() && contains(&s, &mouse_point));
+        if has_selections {
+            return;
+        }
 
         if let Some(hovered_hunk) = hovered_hunk {
             editor.toggle_hovered_hunk(&hovered_hunk, cx);
@@ -539,8 +565,6 @@ impl EditorElement {
             }
         }
 
-        let point_for_position =
-            position_map.point_for_position(text_hitbox.bounds, event.position);
         let position = point_for_position.previous_valid;
         if modifiers.shift && modifiers.alt {
             editor.select(
