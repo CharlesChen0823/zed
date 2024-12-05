@@ -304,7 +304,10 @@ message Envelope {
         InstallExtension install_extension = 287;
 
         GetStagedText get_staged_text = 288;
-        GetStagedTextResponse get_staged_text_response = 289; // current max
+        GetStagedTextResponse get_staged_text_response = 289;
+
+        PrepareCallHierarchy prepare_call_hierarchy = 290;
+        PrepareCallHierarchyResponse prepare_call_hierarchy_response = 291; // current max
     }
 
     reserved 87 to 88;
@@ -1211,6 +1214,16 @@ message CodeAction {
     Anchor start = 2;
     Anchor end = 3;
     bytes lsp_action = 4;
+}
+
+message PrepareCallHierarchy {
+    uint64 project_id = 1;
+    uint64 buffer_id = 2;
+    Anchor position = 3;
+}
+
+message PrepareCallHierarchyResponse {
+    repeated bytes call_hierarchy_item = 1;
 }
 
 message ProjectTransaction {
