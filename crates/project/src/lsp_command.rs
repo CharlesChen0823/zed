@@ -194,10 +194,10 @@ impl LspCommand for PrepareCallHierarchy {
     type ProtoRequest = proto::PrepareCallHierarchy;
 
     fn check_capabilities(&self, capabilities: AdapterServerCapabilities) -> bool {
-        if let Some(provide) = &capabilities.server_capabilities.call_hierarchy_provider {
-            true
-        } else {
-            false
+        match capabilities.server_capabilities.call_hierarchy_provider {
+            Some(lsp::CallHierarchyServerCapability::Simple(enabled)) => enabled,
+            Some(lsp::CallHierarchyServerCapability::Options(_)) => true,
+            None => false,
         }
     }
 
@@ -216,7 +216,7 @@ impl LspCommand for PrepareCallHierarchy {
                 position: point_to_lsp(self.position),
             },
             work_done_progress_params: lsp::WorkDoneProgressParams {
-                work_done_token: None,
+                work_done_token: Default::default(),
             },
         }
     }
@@ -229,6 +229,9 @@ impl LspCommand for PrepareCallHierarchy {
         _: LanguageServerId,
         mut cx: AsyncAppContext,
     ) -> Result<Self::Response> {
+        let Some(call_hierarchy_items) = call_hierarchy_items else {
+            return Ok(vec![]);
+        };
         Ok(vec![])
     }
 
