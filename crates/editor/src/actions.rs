@@ -219,6 +219,7 @@ gpui::actions!(
         ApplyAllDiffHunks,
         ApplyDiffHunk,
         Backspace,
+        CallHierarchy,
         Cancel,
         CancelLanguageServerWork,
         ConfirmRename,

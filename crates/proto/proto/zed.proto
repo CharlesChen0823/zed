@@ -306,9 +306,11 @@ message Envelope {
         GetStagedText get_staged_text = 288;
         GetStagedTextResponse get_staged_text_response = 289;
 
-        RegisterBufferWithLanguageServers register_buffer_with_language_servers = 290;
-        PrepareCallHierarchy prepare_call_hierarchy = 291;
-        PrepareCallHierarchyResponse prepare_call_hierarchy_response = 292; // current max
+        PrepareCallHierarchy prepare_call_hierarchy = 290;
+        PrepareCallHierarchyResponse prepare_call_hierarchy_response = 291;
+
+        CallHierarchyIncomings call_hierarchy_incomings = 292;
+        CallHierarchyIncomingsResponse call_hierarchy_incomings_response = 293; // current max
     }
 
     reserved 87 to 88;
@@ -1226,6 +1228,16 @@ message PrepareCallHierarchy {
 
 message PrepareCallHierarchyResponse {
     repeated bytes call_hierarchy_item = 1;
+}
+
+message CallHierarchyIncomings {
+    uint64 project_id = 1;
+    uint64 buffer_id = 2;
+    bytes item = 3;
+}
+
+message CallHierarchyIncomingsResponse {
+    repeated bytes call_hierarchy_incomings_item = 1;
 }
 
 message ProjectTransaction {

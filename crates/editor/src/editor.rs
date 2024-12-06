@@ -9895,6 +9895,33 @@ impl Editor {
         });
     }
 
+    pub fn call_hierarchy(
+        &mut self,
+        _: &CallHierarchy,
+        cx: &mut ViewContext<Self>,
+    ) -> Option<Task<Result<()>>> {
+        let buffer = self.buffer.read(cx);
+        let newest_selection = self.selections.newest_anchor().clone();
+        let cursor_position = newest_selection.head();
+        let (cursor_buffer, cursor_buffer_position) =
+            buffer.text_anchor_for_position(cursor_position, cx)?;
+
+        dbg!(&cursor_buffer, &cursor_buffer_position);
+
+        let task = if let Some(project) = self.project.as_ref() {
+            project.update(cx, |project, cx| {
+                project.prepare_call_hierarchy(cursor_buffer.clone(), cursor_buffer_position, cx)
+            })
+        } else {
+            return Some(Task::ready(Ok(())));
+        };
+        Some(cx.spawn(|this, mut cx| async move {
+            let range = task.await?;
+            dbg!(&range);
+            Ok(())
+        }))
+    }
+
     pub fn rename(&mut self, _: &Rename, cx: &mut ViewContext<Self>) -> Option<Task<Result<()>>> {
         use language::ToOffset as _;
 
