@@ -2848,6 +2848,7 @@ impl LspStore {
         client.add_model_request_handler(Self::handle_lsp_command::<LinkedEditingRange>);
         client.add_model_request_handler(Self::handle_lsp_command::<PrepareCallHierarchy>);
         client.add_model_request_handler(Self::handle_lsp_command::<CallHierarchyIncomings>);
+        client.add_model_request_handler(Self::handle_lsp_command::<CallHierarchyOutgoings>);
     }
 
     pub fn as_remote(&self) -> Option<&RemoteLspStore> {

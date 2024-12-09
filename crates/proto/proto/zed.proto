@@ -310,7 +310,10 @@ message Envelope {
         PrepareCallHierarchyResponse prepare_call_hierarchy_response = 291;
 
         CallHierarchyIncomings call_hierarchy_incomings = 292;
-        CallHierarchyIncomingsResponse call_hierarchy_incomings_response = 293; // current max
+        CallHierarchyIncomingsResponse call_hierarchy_incomings_response = 293;
+
+        CallHierarchyOutgoings call_hierarchy_outgoings = 294;
+        CallHierarchyOutgoingsResponse call_hierarchy_outgoings_response = 295; // current max
     }
 
     reserved 87 to 88;
@@ -1238,6 +1241,16 @@ message CallHierarchyIncomings {
 
 message CallHierarchyIncomingsResponse {
     repeated bytes call_hierarchy_incomings_item = 1;
+}
+
+message CallHierarchyOutgoings {
+    uint64 project_id = 1;
+    uint64 buffer_id = 2;
+    bytes item = 3;
+}
+
+message CallHierarchyOutgoingsResponse {
+    repeated bytes call_hierarchy_outgoings_item = 1;
 }
 
 message ProjectTransaction {
