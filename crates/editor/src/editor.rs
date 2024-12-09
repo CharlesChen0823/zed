@@ -9906,18 +9906,25 @@ impl Editor {
         let (cursor_buffer, cursor_buffer_position) =
             buffer.text_anchor_for_position(cursor_position, cx)?;
 
-        dbg!(&cursor_buffer, &cursor_buffer_position);
-
-        let task = if let Some(project) = self.project.as_ref() {
-            project.update(cx, |project, cx| {
-                project.prepare_call_hierarchy(cursor_buffer.clone(), cursor_buffer_position, cx)
-            })
-        } else {
-            return Some(Task::ready(Ok(())));
+        let Some(project) = self.project.as_ref().cloned() else {
+            return None;
         };
-        Some(cx.spawn(|this, mut cx| async move {
-            let range = task.await?;
-            dbg!(&range);
+        let tasks = project.update(cx, |project, cx| {
+            project.prepare_call_hierarchy(cursor_buffer.clone(), cursor_buffer_position, cx)
+        });
+
+        Some(cx.spawn(|_, mut cx| async move {
+            let Some(call_hierarchy_items) = tasks.await? else {
+                return Ok(());
+            };
+            let item = call_hierarchy_items[0].clone();
+            let project = project.clone();
+            let task = project.update(&mut cx, |project, cx| {
+                project.call_hierarchy_incomings(cursor_buffer.clone(), item, cx)
+            })?;
+            let task = task.await;
+            dbg!(&task);
+
             Ok(())
         }))
     }
