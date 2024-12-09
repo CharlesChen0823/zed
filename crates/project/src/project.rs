@@ -52,8 +52,8 @@ use language::{
     Transaction, Unclipped,
 };
 use lsp::{
-    CallHierarchyIncomingCall, CallHierarchyItem, CodeActionKind, CompletionContext,
-    CompletionItemKind, DocumentHighlightKind, LanguageServer, LanguageServerId,
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CodeActionKind,
+    CompletionContext, CompletionItemKind, DocumentHighlightKind, LanguageServer, LanguageServerId,
     LanguageServerName, MessageActionItem,
 };
 use lsp_command::*;
@@ -2936,6 +2936,20 @@ impl Project {
             buffer,
             LanguageServerToQuery::Primary,
             CallHierarchyIncomings { item: item },
+            cx,
+        )
+    }
+
+    pub fn call_hierarchy_outgoings(
+        &mut self,
+        buffer: Model<Buffer>,
+        item: CallHierarchyItem,
+        cx: &mut ModelContext<Self>,
+    ) -> Task<Result<Option<Vec<CallHierarchyOutgoingCall>>>> {
+        self.request_lsp(
+            buffer,
+            LanguageServerToQuery::Primary,
+            CallHierarchyOutgoings { item: item },
             cx,
         )
     }
