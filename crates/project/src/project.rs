@@ -52,8 +52,9 @@ use language::{
     Transaction, Unclipped,
 };
 use lsp::{
-    CallHierarchyItem, CodeActionKind, CompletionContext, CompletionItemKind,
-    DocumentHighlightKind, LanguageServer, LanguageServerId, LanguageServerName, MessageActionItem,
+    CallHierarchyIncomingCall, CallHierarchyItem, CodeActionKind, CompletionContext,
+    CompletionItemKind, DocumentHighlightKind, LanguageServer, LanguageServerId,
+    LanguageServerName, MessageActionItem,
 };
 use lsp_command::*;
 use node_runtime::NodeRuntime;
@@ -2923,6 +2924,20 @@ impl Project {
     ) -> Task<Result<Option<Vec<CallHierarchyItem>>>> {
         let position = position.to_point_utf16(buffer.read(cx));
         self.prepare_call_hierarchy_impl(buffer, position, cx)
+    }
+
+    pub fn call_hierarchy_incomings(
+        &mut self,
+        buffer: Model<Buffer>,
+        item: CallHierarchyItem,
+        cx: &mut ModelContext<Self>,
+    ) -> Task<Result<Option<Vec<CallHierarchyIncomingCall>>>> {
+        self.request_lsp(
+            buffer,
+            LanguageServerToQuery::Primary,
+            CallHierarchyIncomings { item: item },
+            cx,
+        )
     }
 
     fn perform_rename_impl(
