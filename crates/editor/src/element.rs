@@ -437,7 +437,14 @@ impl EditorElement {
             }
         });
         register_action(view, cx, |editor, action, cx| {
-            if let Some(task) = editor.call_hierarchy(action, cx) {
+            if let Some(task) = editor.call_hierarchy_incoming(action, cx) {
+                task.detach_and_log_err(cx);
+            } else {
+                cx.propagate();
+            }
+        });
+        register_action(view, cx, |editor, action, cx| {
+            if let Some(task) = editor.call_hierarchy_outgoing(action, cx) {
                 task.detach_and_log_err(cx);
             } else {
                 cx.propagate();
