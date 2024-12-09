@@ -10452,13 +10452,15 @@ impl Editor {
             let Some(call_hierarchy_items) = tasks.await? else {
                 return Ok(());
             };
-            let item = call_hierarchy_items[0].clone();
             let project = project.clone();
-            let task = project.update(&mut cx, |project, cx| {
-                project.call_hierarchy_incomings(cursor_buffer.clone(), item, cx)
-            })?;
-            let task = task.await;
-            dbg!(&task);
+            let mut tasks = Vec::new();
+            for item in call_hierarchy_items.into_iter() {
+                tasks.push(project.update(&mut cx, |project, cx| {
+                    project.call_hierarchy_incomings(cursor_buffer.clone(), item, cx)
+                })?);
+            }
+            let tasks = futures::future::join_all(tasks).await;
+            dbg!(&tasks);
 
             Ok(())
         }))
