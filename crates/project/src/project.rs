@@ -1,3 +1,4 @@
+pub mod bookmark_store;
 pub mod buffer_store;
 mod color_extractor;
 pub mod connection_manager;
@@ -39,6 +40,7 @@ use futures::{
 pub use image_store::{ImageItem, ImageStore};
 use image_store::{ImageItemEvent, ImageStoreEvent};
 
+use bookmark_store::BookmarkStore;
 use git::{blame::Blame, repository::GitRepository};
 use gpui::{
     AnyModel, AppContext, AsyncAppContext, BorrowAppContext, Context as _, EventEmitter, Hsla,
@@ -166,6 +168,7 @@ pub struct Project {
     environment: Model<ProjectEnvironment>,
     settings_observer: Model<SettingsObserver>,
     toolchain_store: Option<Model<ToolchainStore>>,
+    bookmark_store: Model<BookmarkStore>,
 }
 
 #[derive(Default)]
@@ -618,6 +621,8 @@ impl Project {
             cx.subscribe(&buffer_store, Self::on_buffer_store_event)
                 .detach();
 
+            let bookmark_store = cx.new_model(|cx| BookmarkStore::new(worktree_store.clone(), cx));
+
             let image_store = cx.new_model(|cx| ImageStore::local(worktree_store.clone(), cx));
             cx.subscribe(&image_store, Self::on_image_store_event)
                 .detach();
@@ -712,6 +717,7 @@ impl Project {
                 search_excluded_history: Self::new_search_history(),
 
                 toolchain_store: Some(toolchain_store),
+                bookmark_store: bookmark_store,
             }
         })
     }
@@ -747,6 +753,7 @@ impl Project {
                     cx,
                 )
             });
+            let bookmark_store = cx.new_model(|cx| BookmarkStore::new(worktree_store.clone(), cx));
             let image_store = cx.new_model(|cx| {
                 ImageStore::remote(
                     worktree_store.clone(),
@@ -845,6 +852,7 @@ impl Project {
                 search_excluded_history: Self::new_search_history(),
 
                 toolchain_store: Some(toolchain_store),
+                bookmark_store: bookmark_store,
             };
 
             let ssh = ssh.read(cx);
@@ -948,6 +956,7 @@ impl Project {
         let buffer_store = cx.new_model(|cx| {
             BufferStore::remote(worktree_store.clone(), client.clone().into(), remote_id, cx)
         })?;
+        let bookmark_store = cx.new_model(|cx| BookmarkStore::new(worktree_store.clone(), cx))?;
         let image_store = cx.new_model(|cx| {
             ImageStore::remote(worktree_store.clone(), client.clone().into(), remote_id, cx)
         })?;
@@ -1048,6 +1057,7 @@ impl Project {
                 environment: ProjectEnvironment::new(&worktree_store, None, cx),
                 remotely_created_models: Arc::new(Mutex::new(RemotelyCreatedModels::default())),
                 toolchain_store: None,
+                bookmark_store: bookmark_store,
             };
             this.set_role(role, cx);
             for worktree in worktrees {
@@ -1345,6 +1355,30 @@ impl Project {
 
     pub fn snippets(&self) -> &Model<SnippetProvider> {
         &self.snippets
+    }
+
+    pub fn bookmarks(&self) -> &Model<BookmarkStore> {
+        &self.bookmark_store
+    }
+
+    pub fn bookmarks_mut(&mut self) -> &mut Model<BookmarkStore> {
+        &mut self.bookmark_store
+    }
+
+    pub fn toggle_bookmark(
+        &mut self,
+        buffer_id: BufferId,
+        anchor: Anchor,
+        content: String,
+        cx: &mut ModelContext<Self>,
+    ) {
+        let Some(buffer) = self.buffer_for_id(buffer_id, cx) else {
+            return;
+        };
+
+        self.bookmark_store.update(cx, |store, cx| {
+            store.toggle_bookmark(buffer, anchor, Some(content))
+        });
     }
 
     pub fn search_history(&self, kind: SearchInputKind) -> &SearchHistory {
