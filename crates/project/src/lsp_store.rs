@@ -2846,6 +2846,7 @@ impl LspStore {
         client.add_model_request_handler(Self::handle_lsp_command::<PerformRename>);
         client.add_model_request_handler(Self::handle_lsp_command::<lsp_ext_command::ExpandMacro>);
         client.add_model_request_handler(Self::handle_lsp_command::<LinkedEditingRange>);
+        client.add_model_request_handler(Self::handle_lsp_command::<PrepareCallHierarchy>);
     }
 
     pub fn as_remote(&self) -> Option<&RemoteLspStore> {
