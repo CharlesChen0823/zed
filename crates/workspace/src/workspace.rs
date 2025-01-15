@@ -2664,14 +2664,7 @@ impl Workspace {
         allow_preview: bool,
         cx: &mut WindowContext,
     ) -> Task<Result<Box<dyn ItemHandle>, anyhow::Error>> {
-        let pane = pane.unwrap_or_else(|| {
-            self.last_active_center_pane.clone().unwrap_or_else(|| {
-                self.panes
-                    .first()
-                    .expect("There must be an active pane")
-                    .downgrade()
-            })
-        });
+        let pane = pane.unwrap_or_else(|| self.active_pane.downgrade());
 
         let task = self.load_path(path.into(), cx);
         cx.spawn(move |mut cx| async move {
@@ -2704,12 +2697,7 @@ impl Workspace {
         split_direction: Option<SplitDirection>,
         cx: &mut ViewContext<Self>,
     ) -> Task<Result<Box<dyn ItemHandle>, anyhow::Error>> {
-        let pane = self.last_active_center_pane.clone().unwrap_or_else(|| {
-            self.panes
-                .first()
-                .expect("There must be an active pane")
-                .downgrade()
-        });
+        let pane = self.active_pane.downgrade();
 
         if let Member::Pane(center_pane) = &self.center.root {
             if center_pane.read(cx).items_len() == 0 {
@@ -3082,9 +3070,9 @@ impl Workspace {
     }
 
     fn set_active_pane(&mut self, pane: &View<Pane>, cx: &mut ViewContext<Self>) {
+        self.last_active_center_pane = Some(self.active_pane.downgrade());
         self.active_pane = pane.clone();
         self.active_item_path_changed(cx);
-        self.last_active_center_pane = Some(pane.downgrade());
     }
 
     fn handle_panel_focused(&mut self, cx: &mut ViewContext<Self>) {
