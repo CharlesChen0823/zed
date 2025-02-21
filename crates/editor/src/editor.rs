@@ -9818,7 +9818,6 @@ impl Editor {
                 } else {
                     self.select_prev_state = None;
                 }
-
             } else if let Some(selected_text) = selected_text {
                 self.select_prev_state = Some(SelectNextState {
                     query: AhoCorasick::new(&[selected_text.chars().rev().collect::<String>()])?,
