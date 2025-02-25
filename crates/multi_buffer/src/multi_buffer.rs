@@ -1448,7 +1448,7 @@ impl MultiBuffer {
             excerpt.range.context.start,
         ))
     }
-
+    /// Sets excerpts, returns `true` if at least one new excerpt was added.
     pub fn set_excerpts_for_path(
         &mut self,
         path: PathKey,
@@ -1456,7 +1456,7 @@ impl MultiBuffer {
         ranges: Vec<Range<Point>>,
         context_line_count: u32,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         let buffer_snapshot = buffer.update(cx, |buffer, _| buffer.snapshot());
 
         let mut insert_after = self
@@ -1475,6 +1475,7 @@ impl MultiBuffer {
         let mut new_excerpt_ids = Vec::new();
         let mut to_remove = Vec::new();
         let mut to_insert = Vec::new();
+        let mut added_a_new_excerpt = false;
         let snapshot = self.snapshot(cx);
 
         let mut excerpts_cursor = snapshot.excerpts.cursor::<Option<&Locator>>(&());
@@ -1489,6 +1490,7 @@ impl MultiBuffer {
                     continue;
                 }
                 (Some(_), None) => {
+                    added_a_new_excerpt = true;
                     to_insert.push(new_iter.next().unwrap());
                     continue;
                 }
@@ -1552,6 +1554,8 @@ impl MultiBuffer {
         } else {
             self.buffers_by_path.insert(path, new_excerpt_ids);
         }
+
+        added_a_new_excerpt
     }
 
     pub fn paths(&self) -> impl Iterator<Item = PathKey> + '_ {
@@ -2388,6 +2392,23 @@ impl MultiBuffer {
             .is_some()
     }
 
+    pub fn single_hunk_is_expanded(&self, range: Range<Anchor>, cx: &App) -> bool {
+        let snapshot = self.read(cx);
+        let mut cursor = snapshot.diff_transforms.cursor::<usize>(&());
+        let offset_range = range.to_offset(&snapshot);
+        cursor.seek(&offset_range.start, Bias::Right, &());
+        while let Some(item) = cursor.item() {
+            if *cursor.start() >= offset_range.end && *cursor.start() > offset_range.start {
+                break;
+            }
+            if item.hunk_info().is_some() {
+                return true;
+            }
+            cursor.next(&());
+        }
+        false
+    }
+
     pub fn has_expanded_diff_hunks_in_ranges(&self, ranges: &[Range<Anchor>], cx: &App) -> bool {
         let snapshot = self.read(cx);
         let mut cursor = snapshot.diff_transforms.cursor::<usize>(&());
@@ -2411,9 +2432,9 @@ impl MultiBuffer {
         false
     }
 
-    fn expand_or_collapse_diff_hunks_internal(
+    pub fn expand_or_collapse_diff_hunks_inner(
         &mut self,
-        ranges: impl Iterator<Item = (Range<Point>, ExcerptId)>,
+        ranges: impl IntoIterator<Item = (Range<Point>, ExcerptId)>,
         expand: bool,
         cx: &mut Context<Self>,
     ) {
@@ -2459,22 +2480,6 @@ impl MultiBuffer {
         });
     }
 
-    pub fn expand_or_collapse_diff_hunks_narrow(
-        &mut self,
-        ranges: Vec<Range<Anchor>>,
-        expand: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let snapshot = self.snapshot.borrow().clone();
-        self.expand_or_collapse_diff_hunks_internal(
-            ranges
-                .iter()
-                .map(move |range| (range.to_point(&snapshot), range.end.excerpt_id)),
-            expand,
-            cx,
-        );
-    }
-
     pub fn expand_or_collapse_diff_hunks(
         &mut self,
         ranges: Vec<Range<Anchor>>,
@@ -2482,19 +2487,16 @@ impl MultiBuffer {
         cx: &mut Context<Self>,
     ) {
         let snapshot = self.snapshot.borrow().clone();
-        self.expand_or_collapse_diff_hunks_internal(
-            ranges.iter().map(move |range| {
-                let end_excerpt_id = range.end.excerpt_id;
-                let range = range.to_point(&snapshot);
-                let mut peek_end = range.end;
-                if range.end.row < snapshot.max_row().0 {
-                    peek_end = Point::new(range.end.row + 1, 0);
-                };
-                (range.start..peek_end, end_excerpt_id)
-            }),
-            expand,
-            cx,
-        );
+        let ranges = ranges.iter().map(move |range| {
+            let end_excerpt_id = range.end.excerpt_id;
+            let range = range.to_point(&snapshot);
+            let mut peek_end = range.end;
+            if range.end.row < snapshot.max_row().0 {
+                peek_end = Point::new(range.end.row + 1, 0);
+            };
+            (range.start..peek_end, end_excerpt_id)
+        });
+        self.expand_or_collapse_diff_hunks_inner(ranges, expand, cx);
     }
 
     pub fn resize_excerpt(
