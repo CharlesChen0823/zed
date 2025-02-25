@@ -9932,7 +9932,7 @@ impl Editor {
             self.add_selections_state = Some(state);
         }
     }
-    pub fn select_next_match_internal_r(
+    fn select_next_match_internal(
         &mut self,
         display_map: &DisplaySnapshot,
         replace_newest: bool,
@@ -10134,181 +10134,10 @@ impl Editor {
                     wordwise: false,
                     done: false,
                 });
-                self.select_next_match_internal_r(
-                    display_map,
-                    replace_newest,
-                    direction,
-                    autoscroll,
-                    window,
-                    cx,
-                )?;
-            }
-        }
-        Ok(())
-    }
-    pub fn select_next_match_internal(
-        &mut self,
-        display_map: &DisplaySnapshot,
-        replace_newest: bool,
-        autoscroll: Option<Autoscroll>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<()> {
-        fn select_next_match_ranges(
-            this: &mut Editor,
-            range: Range<usize>,
-            replace_newest: bool,
-            auto_scroll: Option<Autoscroll>,
-            window: &mut Window,
-            cx: &mut Context<Editor>,
-        ) {
-            this.unfold_ranges(&[range.clone()], false, true, cx);
-            this.change_selections(auto_scroll, window, cx, |s| {
-                if replace_newest {
-                    s.delete(s.newest_anchor().id);
-                }
-                s.insert_range(range.clone());
-            });
-        }
-
-        let buffer = &display_map.buffer_snapshot;
-        let mut selections = self.selections.all::<usize>(cx);
-        if let Some(mut select_next_state) = self.select_next_state.take() {
-            let query = &select_next_state.query;
-            if !select_next_state.done {
-                let first_selection = selections.iter().min_by_key(|s| s.id).unwrap();
-                let last_selection = selections.iter().max_by_key(|s| s.id).unwrap();
-                let mut next_selected_range = None;
-
-                let bytes_after_last_selection =
-                    buffer.bytes_in_range(last_selection.end..buffer.len());
-                let bytes_before_first_selection = buffer.bytes_in_range(0..first_selection.start);
-                let query_matches = query
-                    .stream_find_iter(bytes_after_last_selection)
-                    .map(|result| (last_selection.end, result))
-                    .chain(
-                        query
-                            .stream_find_iter(bytes_before_first_selection)
-                            .map(|result| (0, result)),
-                    );
-
-                for (start_offset, query_match) in query_matches {
-                    let query_match = query_match.unwrap(); // can only fail due to I/O
-                    let offset_range =
-                        start_offset + query_match.start()..start_offset + query_match.end();
-                    let display_range = offset_range.start.to_display_point(display_map)
-                        ..offset_range.end.to_display_point(display_map);
-
-                    if !select_next_state.wordwise
-                        || (!movement::is_inside_word(display_map, display_range.start)
-                            && !movement::is_inside_word(display_map, display_range.end))
-                    {
-                        // TODO: This is n^2, because we might check all the selections
-                        if !selections
-                            .iter()
-                            .any(|selection| selection.range().overlaps(&offset_range))
-                        {
-                            next_selected_range = Some(offset_range);
-                            break;
-                        }
-                    }
-                }
-
-                if let Some(next_selected_range) = next_selected_range {
-                    select_next_match_ranges(
-                        self,
-                        next_selected_range,
-                        replace_newest,
-                        autoscroll,
-                        window,
-                        cx,
-                    );
-                } else {
-                    select_next_state.done = true;
-                }
-            }
-
-            self.select_next_state = Some(select_next_state);
-        } else {
-            let mut only_carets = true;
-            let mut same_text_selected = true;
-            let mut selected_text = None;
-
-            let mut selections_iter = selections.iter().peekable();
-            while let Some(selection) = selections_iter.next() {
-                if selection.start != selection.end {
-                    only_carets = false;
-                }
-
-                if same_text_selected {
-                    if selected_text.is_none() {
-                        selected_text =
-                            Some(buffer.text_for_range(selection.range()).collect::<String>());
-                    }
-
-                    if let Some(next_selection) = selections_iter.peek() {
-                        if next_selection.range().len() == selection.range().len() {
-                            let next_selected_text = buffer
-                                .text_for_range(next_selection.range())
-                                .collect::<String>();
-                            if Some(next_selected_text) != selected_text {
-                                same_text_selected = false;
-                                selected_text = None;
-                            }
-                        } else {
-                            same_text_selected = false;
-                            selected_text = None;
-                        }
-                    }
-                }
-            }
-
-            if only_carets {
-                for selection in &mut selections {
-                    let word_range = movement::surrounding_word(
-                        display_map,
-                        selection.start.to_display_point(display_map),
-                    );
-                    selection.start = word_range.start.to_offset(display_map, Bias::Left);
-                    selection.end = word_range.end.to_offset(display_map, Bias::Left);
-                    selection.goal = SelectionGoal::None;
-                    selection.reversed = false;
-                    select_next_match_ranges(
-                        self,
-                        selection.start..selection.end,
-                        replace_newest,
-                        autoscroll,
-                        window,
-                        cx,
-                    );
-                }
-
-                if selections.len() == 1 {
-                    let selection = selections
-                        .last()
-                        .expect("ensured that there's only one selection");
-                    let query = buffer
-                        .text_for_range(selection.start..selection.end)
-                        .collect::<String>();
-                    let is_empty = query.is_empty();
-                    let select_state = SelectNextState {
-                        query: AhoCorasick::new(&[query])?,
-                        wordwise: true,
-                        done: is_empty,
-                    };
-                    self.select_next_state = Some(select_state);
-                } else {
-                    self.select_next_state = None;
-                }
-            } else if let Some(selected_text) = selected_text {
-                self.select_next_state = Some(SelectNextState {
-                    query: AhoCorasick::new(&[selected_text])?,
-                    wordwise: false,
-                    done: false,
-                });
                 self.select_next_match_internal(
                     display_map,
                     replace_newest,
+                    direction,
                     autoscroll,
                     window,
                     cx,
@@ -10327,7 +10156,7 @@ impl Editor {
         self.push_to_selection_history();
         let display_map = self.display_map.update(cx, |map, cx| map.snapshot(cx));
 
-        self.select_next_match_internal(&display_map, false, None, window, cx)?;
+        self.select_next_match_internal(&display_map, false, Direction::Next, None, window, cx)?;
         let Some(select_next_state) = self.select_next_state.as_mut() else {
             return Ok(());
         };
@@ -10414,6 +10243,7 @@ impl Editor {
         self.select_next_match_internal(
             &display_map,
             action.replace_newest,
+            Direction::Next,
             Some(Autoscroll::newest()),
             window,
             cx,
@@ -10429,7 +10259,7 @@ impl Editor {
     ) -> Result<()> {
         self.push_to_selection_history();
         let display_map = self.display_map.update(cx, |map, cx| map.snapshot(cx));
-        self.select_next_match_internal_r(
+        self.select_next_match_internal(
             &display_map,
             action.replace_newest,
             Direction::Prev,
