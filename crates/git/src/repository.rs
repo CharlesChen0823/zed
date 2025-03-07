@@ -755,7 +755,7 @@ impl GitRepository for RealGitRepository {
         let fetch_type = match fetch_type {
             FetchType::All => "--all",
             FetchType::Origin => "origin",
-            FetchType::Upstream => "upstream",
+            _ => "upstream",
         };
 
         let mut command = new_smol_command("git");
