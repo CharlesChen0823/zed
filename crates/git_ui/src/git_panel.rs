@@ -19,8 +19,8 @@ use editor::{
 };
 use futures::StreamExt as _;
 use git::repository::{
-    Branch, CommitDetails, CommitSummary, DiffType, PushOptions, Remote, RemoteCommandOutput,
-    ResetMode, Upstream, UpstreamTracking, UpstreamTrackingStatus,
+    Branch, CommitDetails, CommitSummary, DiffType, FetchType, PushOptions, Remote,
+    RemoteCommandOutput, ResetMode, Upstream, UpstreamTracking, UpstreamTrackingStatus,
 };
 use git::{repository::RepoPath, status::FileStatus, Commit, ToggleStaged};
 use git::{RestoreTrackedFiles, StageAll, TrashUntrackedFiles, UnstageAll};
@@ -1529,7 +1529,12 @@ impl GitPanel {
         cx.notify();
     }
 
-    pub(crate) fn fetch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn fetch(
+        &mut self,
+        fetch_type: FetchType,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.can_push_and_pull(cx) {
             return;
         }
@@ -1541,7 +1546,7 @@ impl GitPanel {
         let guard = self.start_remote_operation();
         let askpass = self.askpass_delegate("git fetch", window, cx);
         cx.spawn(|this, mut cx| async move {
-            let fetch = repo.update(&mut cx, |repo, cx| repo.fetch(askpass, cx))?;
+            let fetch = repo.update(&mut cx, |repo, cx| repo.fetch(askpass, fetch_type, cx))?;
 
             let remote_message = fetch.await?;
             drop(guard);
@@ -3482,7 +3487,7 @@ impl PanelRepoFooter {
             move |_, window, cx| {
                 if let Some(panel) = panel.as_ref() {
                     panel.update(cx, |panel, cx| {
-                        panel.fetch(window, cx);
+                        panel.fetch(FetchType::Origin, window, cx);
                     });
                 }
             },

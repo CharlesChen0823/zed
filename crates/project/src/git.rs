@@ -15,8 +15,8 @@ use futures::{
 use git::repository::DiffType;
 use git::{
     repository::{
-        Branch, CommitDetails, GitRepository, PushOptions, Remote, RemoteCommandOutput, RepoPath,
-        ResetMode,
+        Branch, CommitDetails, FetchType, GitRepository, PushOptions, Remote, RemoteCommandOutput,
+        RepoPath, ResetMode,
     },
     status::FileStatus,
 };
@@ -376,6 +376,11 @@ impl GitStore {
     ) -> Result<proto::RemoteMessageResponse> {
         let worktree_id = WorktreeId::from_proto(envelope.payload.worktree_id);
         let work_directory_id = ProjectEntryId::from_proto(envelope.payload.work_directory_id);
+        let fetch_type = envelope.payload.fetch_type;
+        let fetch_type = FetchType::from_proto(
+            proto::FetchType::from_i32(fetch_type)
+                .with_context(|| format!("unknown fetch type: {fetch_type}"))?,
+        );
         let repository_handle =
             Self::repository_for_request(&this, worktree_id, work_directory_id, &mut cx)?;
         let askpass_id = envelope.payload.askpass_id;
@@ -391,7 +396,7 @@ impl GitStore {
 
         let remote_output = repository_handle
             .update(&mut cx, |repository_handle, cx| {
-                repository_handle.fetch(askpass, cx)
+                repository_handle.fetch(askpass, fetch_type, cx)
             })?
             .await??;
 
@@ -1416,6 +1421,7 @@ impl Repository {
     pub fn fetch(
         &mut self,
         askpass: AskPassDelegate,
+        fetch_type: FetchType,
         cx: &App,
     ) -> oneshot::Receiver<Result<RemoteCommandOutput>> {
         let executor = cx.background_executor().clone();
@@ -1426,7 +1432,7 @@ impl Repository {
             match git_repo {
                 GitRepo::Local(git_repository) => {
                     let askpass = AskPassSession::new(&executor, askpass).await?;
-                    git_repository.fetch(askpass)
+                    git_repository.fetch(askpass, fetch_type)
                 }
                 GitRepo::Remote {
                     project_id,
@@ -1446,6 +1452,7 @@ impl Repository {
                             worktree_id: worktree_id.to_proto(),
                             work_directory_id: work_directory_id.to_proto(),
                             askpass_id,
+                            fetch_type: fetch_type.to_proto().into(),
                         })
                         .await
                         .context("sending fetch request")?;

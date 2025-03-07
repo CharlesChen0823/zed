@@ -1,4 +1,5 @@
 use ::settings::Settings;
+use git::repository::FetchType;
 use git::status::FileStatus;
 use git_panel_settings::GitPanelSettings;
 use gpui::App;
@@ -33,7 +34,7 @@ pub fn init(cx: &mut App) {
                 return;
             };
             panel.update(cx, |panel, cx| {
-                panel.fetch(window, cx);
+                panel.fetch(FetchType::Origin, window, cx);
             });
         });
         workspace.register_action(|workspace, _: &git::Push, window, cx| {

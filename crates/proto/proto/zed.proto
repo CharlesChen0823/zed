@@ -640,6 +640,12 @@ message UpdateWorktreeSettings {
     optional LocalSettingsKind kind = 5;
 }
 
+enum FetchType {
+    Origin = 0;
+    Upstream = 1;
+    All = 2;
+}
+
 enum LocalSettingsKind {
     Settings = 0;
     Tasks = 1;
@@ -2843,6 +2849,7 @@ message Fetch {
     uint64 worktree_id = 2;
     uint64 work_directory_id = 3;
     uint64 askpass_id = 4;
+    FetchType fetch_type = 5;
 }
 
 message GetRemotes {

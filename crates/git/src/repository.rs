@@ -9,6 +9,7 @@ use git2::BranchType;
 use gpui::SharedString;
 use parking_lot::Mutex;
 use rope::Rope;
+use rpc::proto;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::borrow::Borrow;
@@ -32,6 +33,30 @@ pub struct Branch {
     pub name: SharedString,
     pub upstream: Option<Upstream>,
     pub most_recent_commit: Option<CommitSummary>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum FetchType {
+    Origin,
+    Upstream,
+    All,
+}
+
+impl FetchType {
+    pub fn from_proto(fetch_type: proto::FetchType) -> Self {
+        match fetch_type {
+            proto::FetchType::Origin => Self::Origin,
+            proto::FetchType::Upstream => Self::Upstream,
+            proto::FetchType::All => Self::All,
+        }
+    }
+    pub fn to_proto(&self) -> proto::FetchType {
+        match self {
+            Self::Origin => proto::FetchType::Origin,
+            Self::Upstream => proto::FetchType::Upstream,
+            Self::All => proto::FetchType::All,
+        }
+    }
 }
 
 impl Branch {
@@ -211,7 +236,7 @@ pub trait GitRepository: Send + Sync {
         upstream_name: &str,
         askpass: AskPassSession,
     ) -> Result<RemoteCommandOutput>;
-    fn fetch(&self, askpass: AskPassSession) -> Result<RemoteCommandOutput>;
+    fn fetch(&self, askpass: AskPassSession, fetch_type: FetchType) -> Result<RemoteCommandOutput>;
 
     fn get_remotes(&self, branch_name: Option<&str>) -> Result<Vec<Remote>>;
 
@@ -720,8 +745,18 @@ impl GitRepository for RealGitRepository {
         run_remote_command(ask_pass, git_process)
     }
 
-    fn fetch(&self, ask_pass: AskPassSession) -> Result<RemoteCommandOutput> {
+    fn fetch(
+        &self,
+        ask_pass: AskPassSession,
+        fetch_type: FetchType,
+    ) -> Result<RemoteCommandOutput> {
         let working_directory = self.working_directory()?;
+
+        let fetch_type = match fetch_type {
+            FetchType::All => "--all",
+            FetchType::Origin => "origin",
+            FetchType::Upstream => "upstream",
+        };
 
         let mut command = new_smol_command("git");
         command
@@ -729,7 +764,7 @@ impl GitRepository for RealGitRepository {
             .env("SSH_ASKPASS", ask_pass.script_path())
             .env("SSH_ASKPASS_REQUIRE", "force")
             .current_dir(&working_directory)
-            .args(["fetch", "--all"]);
+            .args(["fetch", fetch_type]);
         let git_process = command.spawn()?;
 
         run_remote_command(ask_pass, git_process)
@@ -1067,7 +1102,11 @@ impl GitRepository for FakeGitRepository {
         unimplemented!()
     }
 
-    fn fetch(&self, _ask_pass: AskPassSession) -> Result<RemoteCommandOutput> {
+    fn fetch(
+        &self,
+        _ask_pass: AskPassSession,
+        _fetch_type: FetchType,
+    ) -> Result<RemoteCommandOutput> {
         unimplemented!()
     }
 
