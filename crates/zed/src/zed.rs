@@ -455,11 +455,7 @@ fn initialize_panels(
             workspace.add_panel(git_panel, window, cx);
         })?;
 
-        let is_assistant2_enabled = if cfg!(test) {
-            false
-        } else {
-            assistant2_feature_flag.await
-        };
+        let is_assistant2_enabled = true;
 
         let (assistant_panel, assistant2_panel) = if is_assistant2_enabled {
             let assistant2_panel = assistant2::AssistantPanel::load(
