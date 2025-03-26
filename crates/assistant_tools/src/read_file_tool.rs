@@ -9,6 +9,7 @@ use language_model::LanguageModelRequestMessage;
 use project::Project;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use ui::IconName;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReadFileToolInput {
@@ -44,8 +45,16 @@ impl Tool for ReadFileTool {
         "read-file".into()
     }
 
+    fn needs_confirmation(&self) -> bool {
+        false
+    }
+
     fn description(&self) -> String {
         include_str!("./read_file_tool/description.md").into()
+    }
+
+    fn icon(&self) -> IconName {
+        IconName::Eye
     }
 
     fn input_schema(&self) -> serde_json::Value {
