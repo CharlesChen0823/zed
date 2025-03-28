@@ -9,18 +9,22 @@ use ui::{prelude::*, Render};
 
 pub struct ToolReadyPopUp {
     caption: SharedString,
+    icon: IconName,
+    icon_color: Color,
 }
 
 impl ToolReadyPopUp {
-    pub fn new(caption: impl Into<SharedString>) -> Self {
+    pub fn new(caption: impl Into<SharedString>, icon: IconName, icon_color: Color) -> Self {
         Self {
             caption: caption.into(),
+            icon,
+            icon_color,
         }
     }
 
     pub fn window_options(screen: Rc<dyn PlatformDisplay>, cx: &App) -> WindowOptions {
         let size = Size {
-            width: px(440.),
+            width: px(450.),
             height: px(72.),
         };
 
@@ -82,15 +86,25 @@ impl Render for ToolReadyPopUp {
                     .gap_2()
                     .child(
                         h_flex().h(line_height).justify_center().child(
-                            Icon::new(IconName::Info)
-                                .size(IconSize::Small)
-                                .color(Color::Muted),
+                            Icon::new(self.icon)
+                                .color(self.icon_color)
+                                .size(IconSize::Small),
                         ),
                     )
                     .child(
                         v_flex()
-                            .child(Headline::new("Agent Panel").size(HeadlineSize::XSmall))
-                            .child(Label::new(self.caption.clone()).color(Color::Muted)),
+                            .child(
+                                div()
+                                    .text_size(px(16.))
+                                    .text_color(cx.theme().colors().text)
+                                    .child("Agent Panel"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(14.))
+                                    .text_color(cx.theme().colors().text_muted)
+                                    .child(self.caption.clone()),
+                            ),
                     ),
             )
             .child(
