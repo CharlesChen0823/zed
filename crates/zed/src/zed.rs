@@ -8,11 +8,11 @@ mod quick_action_bar;
 #[cfg(target_os = "windows")]
 pub(crate) mod windows_only_instance;
 
+use agent::AgentDiffToolbar;
 use anyhow::Context as _;
 pub use app_menus::*;
 use assets::Assets;
 use assistant_context_editor::AssistantPanelDelegate;
-use assistant2::AssistantDiffToolbar;
 use breadcrumbs::Breadcrumbs;
 use client::{ZED_URL_SCHEME, zed_urls};
 use collections::VecDeque;
@@ -462,12 +462,9 @@ fn initialize_panels(
         let is_assistant2_enabled = true;
 
         let (assistant_panel, assistant2_panel) = if is_assistant2_enabled {
-            let assistant2_panel = assistant2::AssistantPanel::load(
-                workspace_handle.clone(),
-                prompt_builder,
-                cx.clone(),
-            )
-            .await?;
+            let assistant2_panel =
+                agent::AssistantPanel::load(workspace_handle.clone(), prompt_builder, cx.clone())
+                    .await?;
 
             (None, Some(assistant2_panel))
         } else {
@@ -495,16 +492,16 @@ fn initialize_panels(
             // We need to do this here instead of within the individual `init`
             // functions so that we only register the actions once.
             //
-            // Once we ship `assistant2` we can push this back down into `assistant2::assistant_panel::init`.
+            // Once we ship `assistant2` we can push this back down into `agent::assistant_panel::init`.
             if is_assistant2_enabled {
                 <dyn AssistantPanelDelegate>::set_global(
-                    Arc::new(assistant2::ConcreteAssistantPanelDelegate),
+                    Arc::new(agent::ConcreteAssistantPanelDelegate),
                     cx,
                 );
 
                 workspace
-                    .register_action(assistant2::AssistantPanel::toggle_focus)
-                    .register_action(assistant2::InlineAssistant::inline_assist);
+                    .register_action(agent::AssistantPanel::toggle_focus)
+                    .register_action(agent::InlineAssistant::inline_assist);
             } else {
                 <dyn AssistantPanelDelegate>::set_global(
                     Arc::new(assistant::assistant_panel::ConcreteAssistantPanelDelegate),
@@ -937,8 +934,8 @@ fn initialize_pane(
             toolbar.add_item(migration_banner, window, cx);
             let project_diff_toolbar = cx.new(|cx| ProjectDiffToolbar::new(workspace, cx));
             toolbar.add_item(project_diff_toolbar, window, cx);
-            let assistant_diff_toolbar = cx.new(|cx| AssistantDiffToolbar::new(workspace, cx));
-            toolbar.add_item(assistant_diff_toolbar, window, cx);
+            let agent_diff_toolbar = cx.new(|cx| AgentDiffToolbar::new(workspace, cx));
+            toolbar.add_item(agent_diff_toolbar, window, cx);
         })
     });
 }
