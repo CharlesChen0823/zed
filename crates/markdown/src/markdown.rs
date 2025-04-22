@@ -107,6 +107,7 @@ struct Options {
 pub enum CodeBlockRenderer {
     Default {
         copy_button: bool,
+        border: bool,
     },
     Custom {
         render: CodeBlockRenderFn,
@@ -188,6 +189,11 @@ impl Markdown {
 
     pub fn append(&mut self, text: &str, cx: &mut Context<Self>) {
         self.source = SharedString::new(self.source.to_string() + text);
+        self.parse(cx);
+    }
+
+    pub fn replace(&mut self, source: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.source = source.into();
         self.parse(cx);
     }
 
@@ -381,7 +387,10 @@ impl MarkdownElement {
         Self {
             markdown,
             style,
-            code_block_renderer: CodeBlockRenderer::Default { copy_button: true },
+            code_block_renderer: CodeBlockRenderer::Default {
+                copy_button: true,
+                border: false,
+            },
             on_url_click: None,
         }
     }
@@ -748,6 +757,16 @@ impl Element for MarkdownElement {
                                                 code_block.w_full()
                                             }
                                         });
+
+                                    if let CodeBlockRenderer::Default { border: true, .. } =
+                                        &self.code_block_renderer
+                                    {
+                                        code_block = code_block
+                                            .rounded_md()
+                                            .border_1()
+                                            .border_color(cx.theme().colors().border_variant);
+                                    }
+
                                     code_block.style().refine(&self.style.code_block);
                                     if let Some(code_block_text_style) = &self.style.code_block.text
                                     {
@@ -947,10 +966,10 @@ impl Element for MarkdownElement {
                             });
                         }
 
-                        if matches!(
-                            &self.code_block_renderer,
-                            CodeBlockRenderer::Default { copy_button: true }
-                        ) {
+                        if let CodeBlockRenderer::Default {
+                            copy_button: true, ..
+                        } = &self.code_block_renderer
+                        {
                             builder.flush_text();
                             builder.modify_current_div(|el| {
                                 let content_range = parser::extract_code_block_content_range(

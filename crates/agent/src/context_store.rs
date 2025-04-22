@@ -8,15 +8,16 @@ use futures::future::join_all;
 use futures::{self, Future, FutureExt, future};
 use gpui::{App, AppContext as _, Context, Entity, SharedString, Task, WeakEntity};
 use language::{Buffer, File};
-use project::{Project, ProjectItem, ProjectPath, Worktree};
-use rope::Rope;
+use project::{Project, ProjectEntryId, ProjectItem, ProjectPath, Worktree};
+use prompt_store::UserPromptId;
+use rope::{Point, Rope};
 use text::{Anchor, BufferId, OffsetRangeExt};
 use util::{ResultExt as _, maybe};
 
 use crate::ThreadStore;
 use crate::context::{
     AssistantContext, ContextBuffer, ContextId, ContextSymbol, ContextSymbolId, DirectoryContext,
-    FetchedUrlContext, FileContext, SymbolContext, ThreadContext,
+    ExcerptContext, FetchedUrlContext, FileContext, RulesContext, SymbolContext, ThreadContext,
 };
 use crate::context_strip::SuggestedContext;
 use crate::thread::{Thread, ThreadId};
@@ -25,7 +26,6 @@ pub struct ContextStore {
     project: WeakEntity<Project>,
     context: Vec<AssistantContext>,
     thread_store: Option<WeakEntity<ThreadStore>>,
-    // TODO: If an EntityId is used for all context types (like BufferId), can remove ContextId.
     next_context_id: ContextId,
     files: BTreeMap<BufferId, ContextId>,
     directories: HashMap<ProjectPath, ContextId>,
@@ -35,6 +35,7 @@ pub struct ContextStore {
     threads: HashMap<ThreadId, ContextId>,
     thread_summary_tasks: Vec<Task<()>>,
     fetched_urls: HashMap<String, ContextId>,
+    user_rules: HashMap<UserPromptId, ContextId>,
 }
 
 impl ContextStore {
@@ -55,6 +56,7 @@ impl ContextStore {
             threads: HashMap::default(),
             thread_summary_tasks: Vec::new(),
             fetched_urls: HashMap::default(),
+            user_rules: HashMap::default(),
         }
     }
 
@@ -72,6 +74,7 @@ impl ContextStore {
         self.directories.clear();
         self.threads.clear();
         self.fetched_urls.clear();
+        self.user_rules.clear();
     }
 
     pub fn add_file_from_path(
@@ -110,7 +113,7 @@ impl ContextStore {
             }
 
             let (buffer_info, text_task) =
-                this.update(cx, |_, cx| collect_buffer_info_and_text(buffer, None, cx))??;
+                this.update(cx, |_, cx| collect_buffer_info_and_text(buffer, cx))??;
 
             let text = text_task.await;
 
@@ -129,7 +132,7 @@ impl ContextStore {
     ) -> Task<Result<()>> {
         cx.spawn(async move |this, cx| {
             let (buffer_info, text_task) =
-                this.update(cx, |_, cx| collect_buffer_info_and_text(buffer, None, cx))??;
+                this.update(cx, |_, cx| collect_buffer_info_and_text(buffer, cx))??;
 
             let text = text_task.await;
 
@@ -157,6 +160,14 @@ impl ContextStore {
     ) -> Task<Result<()>> {
         let Some(project) = self.project.upgrade() else {
             return Task::ready(Err(anyhow!("failed to read project")));
+        };
+
+        let Some(entry_id) = project
+            .read(cx)
+            .entry_for_path(&project_path, cx)
+            .map(|entry| entry.id)
+        else {
+            return Task::ready(Err(anyhow!("no entry found for directory context")));
         };
 
         let already_included = match self.includes_directory(&project_path) {
@@ -206,7 +217,7 @@ impl ContextStore {
                 // Skip all binary files and other non-UTF8 files
                 for buffer in buffers.into_iter().flatten() {
                     if let Some((buffer_info, text_task)) =
-                        collect_buffer_info_and_text(buffer, None, cx).log_err()
+                        collect_buffer_info_and_text(buffer, cx).log_err()
                     {
                         buffer_infos.push(buffer_info);
                         text_tasks.push(text_task);
@@ -228,7 +239,7 @@ impl ContextStore {
             }
 
             this.update(cx, |this, cx| {
-                this.insert_directory(worktree, project_path, context_buffers, cx);
+                this.insert_directory(worktree, entry_id, project_path, context_buffers, cx);
             })?;
 
             anyhow::Ok(())
@@ -238,19 +249,21 @@ impl ContextStore {
     fn insert_directory(
         &mut self,
         worktree: Entity<Worktree>,
+        entry_id: ProjectEntryId,
         project_path: ProjectPath,
         context_buffers: Vec<ContextBuffer>,
         cx: &mut Context<Self>,
     ) {
         let id = self.next_context_id.post_inc();
-        let path = project_path.path.clone();
+        let last_path = project_path.path.clone();
         self.directories.insert(project_path, id);
 
         self.context
             .push(AssistantContext::Directory(DirectoryContext {
                 id,
                 worktree,
-                path,
+                entry_id,
+                last_path,
                 context_buffers,
             }));
         cx.notify();
@@ -290,11 +303,14 @@ impl ContextStore {
             }
         }
 
-        let (buffer_info, collect_content_task) =
-            match collect_buffer_info_and_text(buffer, Some(symbol_enclosing_range.clone()), cx) {
-                Ok((buffer_info, collect_context_task)) => (buffer_info, collect_context_task),
-                Err(err) => return Task::ready(Err(err)),
-            };
+        let (buffer_info, collect_content_task) = match collect_buffer_info_and_text_for_range(
+            buffer,
+            symbol_enclosing_range.clone(),
+            cx,
+        ) {
+            Ok((_, buffer_info, collect_context_task)) => (buffer_info, collect_context_task),
+            Err(err) => return Task::ready(Err(err)),
+        };
 
         cx.spawn(async move |this, cx| {
             let content = collect_content_task.await;
@@ -387,6 +403,42 @@ impl ContextStore {
         cx.notify();
     }
 
+    pub fn add_rules(
+        &mut self,
+        prompt_id: UserPromptId,
+        title: impl Into<SharedString>,
+        text: impl Into<SharedString>,
+        remove_if_exists: bool,
+        cx: &mut Context<ContextStore>,
+    ) {
+        if let Some(context_id) = self.includes_user_rules(&prompt_id) {
+            if remove_if_exists {
+                self.remove_context(context_id, cx);
+            }
+        } else {
+            self.insert_user_rules(prompt_id, title, text, cx);
+        }
+    }
+
+    pub fn insert_user_rules(
+        &mut self,
+        prompt_id: UserPromptId,
+        title: impl Into<SharedString>,
+        text: impl Into<SharedString>,
+        cx: &mut Context<ContextStore>,
+    ) {
+        let id = self.next_context_id.post_inc();
+
+        self.user_rules.insert(prompt_id, id);
+        self.context.push(AssistantContext::Rules(RulesContext {
+            id,
+            prompt_id,
+            title: title.into(),
+            text: text.into(),
+        }));
+        cx.notify();
+    }
+
     pub fn add_fetched_url(
         &mut self,
         url: String,
@@ -413,6 +465,49 @@ impl ContextStore {
                 url: url.into(),
                 text: text.into(),
             }));
+        cx.notify();
+    }
+
+    pub fn add_excerpt(
+        &mut self,
+        range: Range<Anchor>,
+        buffer: Entity<Buffer>,
+        cx: &mut Context<ContextStore>,
+    ) -> Task<Result<()>> {
+        cx.spawn(async move |this, cx| {
+            let (line_range, buffer_info, text_task) = this.update(cx, |_, cx| {
+                collect_buffer_info_and_text_for_range(buffer, range.clone(), cx)
+            })??;
+
+            let text = text_task.await;
+
+            this.update(cx, |this, cx| {
+                this.insert_excerpt(
+                    make_context_buffer(buffer_info, text),
+                    range,
+                    line_range,
+                    cx,
+                )
+            })?;
+
+            anyhow::Ok(())
+        })
+    }
+
+    fn insert_excerpt(
+        &mut self,
+        context_buffer: ContextBuffer,
+        range: Range<Anchor>,
+        line_range: Range<Point>,
+        cx: &mut Context<Self>,
+    ) {
+        let id = self.next_context_id.post_inc();
+        self.context.push(AssistantContext::Excerpt(ExcerptContext {
+            id,
+            range,
+            line_range,
+            context_buffer,
+        }));
         cx.notify();
     }
 
@@ -465,11 +560,15 @@ impl ContextStore {
                 self.symbol_buffers.remove(&symbol.context_symbol.id);
                 self.symbols.retain(|_, context_id| *context_id != id);
             }
+            AssistantContext::Excerpt(_) => {}
             AssistantContext::FetchedUrl(_) => {
                 self.fetched_urls.retain(|_, context_id| *context_id != id);
             }
             AssistantContext::Thread(_) => {
                 self.threads.retain(|_, context_id| *context_id != id);
+            }
+            AssistantContext::Rules(RulesContext { prompt_id, .. }) => {
+                self.user_rules.remove(&prompt_id);
             }
         }
 
@@ -567,6 +666,10 @@ impl ContextStore {
         self.threads.get(thread_id).copied()
     }
 
+    pub fn includes_user_rules(&self, prompt_id: &UserPromptId) -> Option<ContextId> {
+        self.user_rules.get(prompt_id).copied()
+    }
+
     pub fn includes_url(&self, url: &str) -> Option<ContextId> {
         self.fetched_urls.get(url).copied()
     }
@@ -592,8 +695,10 @@ impl ContextStore {
                 }
                 AssistantContext::Directory(_)
                 | AssistantContext::Symbol(_)
+                | AssistantContext::Excerpt(_)
                 | AssistantContext::FetchedUrl(_)
-                | AssistantContext::Thread(_) => None,
+                | AssistantContext::Thread(_)
+                | AssistantContext::Rules(_) => None,
             })
             .collect()
     }
@@ -643,41 +748,78 @@ fn make_context_symbol(
     }
 }
 
+fn collect_buffer_info_and_text_for_range(
+    buffer: Entity<Buffer>,
+    range: Range<Anchor>,
+    cx: &App,
+) -> Result<(Range<Point>, BufferInfo, Task<SharedString>)> {
+    let content = buffer
+        .read(cx)
+        .text_for_range(range.clone())
+        .collect::<Rope>();
+
+    let line_range = range.to_point(&buffer.read(cx).snapshot());
+
+    let buffer_info = collect_buffer_info(buffer, cx)?;
+    let full_path = buffer_info.file.full_path(cx);
+
+    let text_task = cx.background_spawn({
+        let line_range = line_range.clone();
+        async move { to_fenced_codeblock(&full_path, content, Some(line_range)) }
+    });
+
+    Ok((line_range, buffer_info, text_task))
+}
+
 fn collect_buffer_info_and_text(
     buffer: Entity<Buffer>,
-    range: Option<Range<Anchor>>,
     cx: &App,
 ) -> Result<(BufferInfo, Task<SharedString>)> {
+    let content = buffer.read(cx).as_rope().clone();
+
+    let buffer_info = collect_buffer_info(buffer, cx)?;
+    let full_path = buffer_info.file.full_path(cx);
+
+    let text_task =
+        cx.background_spawn(async move { to_fenced_codeblock(&full_path, content, None) });
+
+    Ok((buffer_info, text_task))
+}
+
+fn collect_buffer_info(buffer: Entity<Buffer>, cx: &App) -> Result<BufferInfo> {
     let buffer_ref = buffer.read(cx);
     let file = buffer_ref.file().context("file context must have a path")?;
 
     // Important to collect version at the same time as content so that staleness logic is correct.
     let version = buffer_ref.version();
-    let content = if let Some(range) = range {
-        buffer_ref.text_for_range(range).collect::<Rope>()
-    } else {
-        buffer_ref.as_rope().clone()
-    };
 
-    let buffer_info = BufferInfo {
+    Ok(BufferInfo {
         buffer,
         id: buffer_ref.remote_id(),
         file: file.clone(),
         version,
-    };
-
-    let full_path = file.full_path(cx);
-    let text_task = cx.background_spawn(async move { to_fenced_codeblock(&full_path, content) });
-
-    Ok((buffer_info, text_task))
+    })
 }
 
-fn to_fenced_codeblock(path: &Path, content: Rope) -> SharedString {
+fn to_fenced_codeblock(
+    path: &Path,
+    content: Rope,
+    line_range: Option<Range<Point>>,
+) -> SharedString {
+    let line_range_text = line_range.map(|range| {
+        if range.start.row == range.end.row {
+            format!(":{}", range.start.row + 1)
+        } else {
+            format!(":{}-{}", range.start.row + 1, range.end.row + 1)
+        }
+    });
+
     let path_extension = path.extension().and_then(|ext| ext.to_str());
     let path_string = path.to_string_lossy();
     let capacity = 3
         + path_extension.map_or(0, |extension| extension.len() + 1)
         + path_string.len()
+        + line_range_text.as_ref().map_or(0, |text| text.len())
         + 1
         + content.len()
         + 5;
@@ -690,6 +832,10 @@ fn to_fenced_codeblock(path: &Path, content: Rope) -> SharedString {
         buffer.push(' ');
     }
     buffer.push_str(&path_string);
+
+    if let Some(line_range_text) = line_range_text {
+        buffer.push_str(&line_range_text);
+    }
 
     buffer.push('\n');
     for chunk in content.chunks() {
@@ -739,6 +885,7 @@ pub fn refresh_context_store_text(
         let task = maybe!({
             match context {
                 AssistantContext::File(file_context) => {
+                    // TODO: Should refresh if the path has changed, as it's in the text.
                     if changed_buffers.is_empty()
                         || changed_buffers.contains(&file_context.context_buffer.buffer)
                     {
@@ -747,8 +894,9 @@ pub fn refresh_context_store_text(
                     }
                 }
                 AssistantContext::Directory(directory_context) => {
-                    let directory_path = directory_context.project_path(cx);
-                    let should_refresh = changed_buffers.is_empty()
+                    let directory_path = directory_context.project_path(cx)?;
+                    let should_refresh = directory_path.path != directory_context.last_path
+                        || changed_buffers.is_empty()
                         || changed_buffers.iter().any(|buffer| {
                             let Some(buffer_path) = buffer.read(cx).project_path(cx) else {
                                 return false;
@@ -758,15 +906,30 @@ pub fn refresh_context_store_text(
 
                     if should_refresh {
                         let context_store = context_store.clone();
-                        return refresh_directory_text(context_store, directory_context, cx);
+                        return refresh_directory_text(
+                            context_store,
+                            directory_context,
+                            directory_path,
+                            cx,
+                        );
                     }
                 }
                 AssistantContext::Symbol(symbol_context) => {
+                    // TODO: Should refresh if the path has changed, as it's in the text.
                     if changed_buffers.is_empty()
                         || changed_buffers.contains(&symbol_context.context_symbol.buffer)
                     {
                         let context_store = context_store.clone();
                         return refresh_symbol_text(context_store, symbol_context, cx);
+                    }
+                }
+                AssistantContext::Excerpt(excerpt_context) => {
+                    // TODO: Should refresh if the path has changed, as it's in the text.
+                    if changed_buffers.is_empty()
+                        || changed_buffers.contains(&excerpt_context.context_buffer.buffer)
+                    {
+                        let context_store = context_store.clone();
+                        return refresh_excerpt_text(context_store, excerpt_context, cx);
                     }
                 }
                 AssistantContext::Thread(thread_context) => {
@@ -779,6 +942,10 @@ pub fn refresh_context_store_text(
                 // and doing the caching properly could be tricky (unless it's already handled by
                 // the HttpClient?).
                 AssistantContext::FetchedUrl(_) => {}
+                AssistantContext::Rules(user_rules_context) => {
+                    let context_store = context_store.clone();
+                    return Some(refresh_user_rules(context_store, user_rules_context, cx));
+                }
             }
 
             None
@@ -817,6 +984,7 @@ fn refresh_file_text(
 fn refresh_directory_text(
     context_store: Entity<ContextStore>,
     directory_context: &DirectoryContext,
+    directory_path: ProjectPath,
     cx: &App,
 ) -> Option<Task<()>> {
     let mut stale = false;
@@ -841,7 +1009,8 @@ fn refresh_directory_text(
 
     let id = directory_context.id;
     let worktree = directory_context.worktree.clone();
-    let path = directory_context.path.clone();
+    let entry_id = directory_context.entry_id;
+    let last_path = directory_path.path;
     Some(cx.spawn(async move |cx| {
         let context_buffers = context_buffers.await;
         context_store
@@ -849,7 +1018,8 @@ fn refresh_directory_text(
                 let new_directory_context = DirectoryContext {
                     id,
                     worktree,
-                    path,
+                    entry_id,
+                    last_path,
                     context_buffers,
                 };
                 context_store.replace_context(AssistantContext::Directory(new_directory_context));
@@ -880,6 +1050,34 @@ fn refresh_symbol_text(
     }
 }
 
+fn refresh_excerpt_text(
+    context_store: Entity<ContextStore>,
+    excerpt_context: &ExcerptContext,
+    cx: &App,
+) -> Option<Task<()>> {
+    let id = excerpt_context.id;
+    let range = excerpt_context.range.clone();
+    let task = refresh_context_excerpt(&excerpt_context.context_buffer, range.clone(), cx);
+    if let Some(task) = task {
+        Some(cx.spawn(async move |cx| {
+            let (line_range, context_buffer) = task.await;
+            context_store
+                .update(cx, |context_store, _| {
+                    let new_excerpt_context = ExcerptContext {
+                        id,
+                        range,
+                        line_range,
+                        context_buffer,
+                    };
+                    context_store.replace_context(AssistantContext::Excerpt(new_excerpt_context));
+                })
+                .ok();
+        }))
+    } else {
+        None
+    }
+}
+
 fn refresh_thread_text(
     context_store: Entity<ContextStore>,
     thread_context: &ThreadContext,
@@ -901,6 +1099,45 @@ fn refresh_thread_text(
     })
 }
 
+fn refresh_user_rules(
+    context_store: Entity<ContextStore>,
+    user_rules_context: &RulesContext,
+    cx: &App,
+) -> Task<()> {
+    let id = user_rules_context.id;
+    let prompt_id = user_rules_context.prompt_id;
+    let Some(thread_store) = context_store.read(cx).thread_store.as_ref() else {
+        return Task::ready(());
+    };
+    let Ok(load_task) = thread_store.read_with(cx, |thread_store, cx| {
+        thread_store.load_rules(prompt_id, cx)
+    }) else {
+        return Task::ready(());
+    };
+    cx.spawn(async move |cx| {
+        if let Ok((metadata, text)) = load_task.await {
+            if let Some(title) = metadata.title.clone() {
+                context_store
+                    .update(cx, |context_store, _cx| {
+                        context_store.replace_context(AssistantContext::Rules(RulesContext {
+                            id,
+                            prompt_id,
+                            title,
+                            text: text.into(),
+                        }));
+                    })
+                    .ok();
+                return;
+            }
+        }
+        context_store
+            .update(cx, |context_store, cx| {
+                context_store.remove_context(id, cx);
+            })
+            .ok();
+    })
+}
+
 fn refresh_context_buffer(
     context_buffer: &ContextBuffer,
     cx: &App,
@@ -908,8 +1145,24 @@ fn refresh_context_buffer(
     let buffer = context_buffer.buffer.read(cx);
     if buffer.version.changed_since(&context_buffer.version) {
         let (buffer_info, text_task) =
-            collect_buffer_info_and_text(context_buffer.buffer.clone(), None, cx).log_err()?;
+            collect_buffer_info_and_text(context_buffer.buffer.clone(), cx).log_err()?;
         Some(text_task.map(move |text| make_context_buffer(buffer_info, text)))
+    } else {
+        None
+    }
+}
+
+fn refresh_context_excerpt(
+    context_buffer: &ContextBuffer,
+    range: Range<Anchor>,
+    cx: &App,
+) -> Option<impl Future<Output = (Range<Point>, ContextBuffer)> + use<>> {
+    let buffer = context_buffer.buffer.read(cx);
+    if buffer.version.changed_since(&context_buffer.version) {
+        let (line_range, buffer_info, text_task) =
+            collect_buffer_info_and_text_for_range(context_buffer.buffer.clone(), range, cx)
+                .log_err()?;
+        Some(text_task.map(move |text| (line_range, make_context_buffer(buffer_info, text))))
     } else {
         None
     }
@@ -922,9 +1175,9 @@ fn refresh_context_symbol(
     let buffer = context_symbol.buffer.read(cx);
     let project_path = buffer.project_path(cx)?;
     if buffer.version.changed_since(&context_symbol.buffer_version) {
-        let (buffer_info, text_task) = collect_buffer_info_and_text(
+        let (_, buffer_info, text_task) = collect_buffer_info_and_text_for_range(
             context_symbol.buffer.clone(),
-            Some(context_symbol.enclosing_range.clone()),
+            context_symbol.enclosing_range.clone(),
             cx,
         )
         .log_err()?;

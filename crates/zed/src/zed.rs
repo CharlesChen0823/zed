@@ -1220,9 +1220,9 @@ pub fn handle_keymap_file_changes(
     })
     .detach();
 
-    let mut current_mapping = settings::get_key_equivalents(cx.keyboard_layout());
+    let mut current_mapping = settings::get_key_equivalents(cx.keyboard_layout().id());
     cx.on_keyboard_layout_change(move |cx| {
-        let next_mapping = settings::get_key_equivalents(cx.keyboard_layout());
+        let next_mapping = settings::get_key_equivalents(cx.keyboard_layout().id());
         if next_mapping != current_mapping {
             current_mapping = next_mapping;
             keyboard_layout_tx.unbounded_send(()).ok();
@@ -4254,6 +4254,8 @@ mod tests {
                 app_state.fs.clone(),
                 cx,
             );
+            web_search::init(cx);
+            web_search_providers::init(app_state.client.clone(), cx);
             let prompt_builder = PromptBuilder::load(app_state.fs.clone(), false, cx);
             assistant::init(
                 app_state.fs.clone(),

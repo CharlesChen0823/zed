@@ -12,8 +12,8 @@ use crate::{
 use buffer_diff::{BufferDiff, DiffHunkSecondaryStatus, DiffHunkStatus, DiffHunkStatusKind};
 use futures::StreamExt;
 use gpui::{
-    BackgroundExecutor, SemanticVersion, TestAppContext, UpdateGlobal, VisualTestContext,
-    WindowBounds, WindowOptions, div,
+    BackgroundExecutor, DismissEvent, SemanticVersion, TestAppContext, UpdateGlobal,
+    VisualTestContext, WindowBounds, WindowOptions, div,
 };
 use indoc::indoc;
 use language::{
@@ -5121,6 +5121,36 @@ if is_entire_line {
         ),
         "When selecting past the indent, nothing is trimmed"
     );
+
+    cx.set_state(
+        r#"            «for selection in selections.iter() {
+            let mut start = selection.start;
+
+            let mut end = selection.end;
+            let is_entire_line = selection.is_empty();
+            if is_entire_line {
+                start = Point::new(start.row, 0);
+ˇ»                end = cmp::min(max_point, Point::new(end.row + 1, 0));
+            }
+        "#,
+    );
+    cx.update_editor(|e, window, cx| e.copy_and_trim(&CopyAndTrim, window, cx));
+    assert_eq!(
+        cx.read_from_clipboard()
+            .and_then(|item| item.text().as_deref().map(str::to_string)),
+        Some(
+            "for selection in selections.iter() {
+let mut start = selection.start;
+
+let mut end = selection.end;
+let is_entire_line = selection.is_empty();
+if is_entire_line {
+    start = Point::new(start.row, 0);
+"
+            .to_string()
+        ),
+        "Copying with stripping should ignore empty lines"
+    );
 }
 
 #[gpui::test]
@@ -6309,7 +6339,187 @@ async fn test_select_larger_smaller_syntax_node(cx: &mut TestAppContext) {
                 use mod1::mod2::«{mod3, mod4}ˇ»;
 
                 fn fn_1«ˇ(param1: bool, param2: &str)» {
-                    «ˇlet var1 = "text";»
+                    let var1 = "«ˇtext»";
+                }
+            "#},
+            cx,
+        );
+    });
+}
+
+#[gpui::test]
+async fn test_select_larger_smaller_syntax_node_for_string(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let language = Arc::new(Language::new(
+        LanguageConfig::default(),
+        Some(tree_sitter_rust::LANGUAGE.into()),
+    ));
+
+    let text = r#"
+        use mod1::mod2::{mod3, mod4};
+
+        fn fn_1(param1: bool, param2: &str) {
+            let var1 = "hello world";
+        }
+    "#
+    .unindent();
+
+    let buffer = cx.new(|cx| Buffer::local(text, cx).with_language(language, cx));
+    let buffer = cx.new(|cx| MultiBuffer::singleton(buffer, cx));
+    let (editor, cx) = cx.add_window_view(|window, cx| build_editor(buffer, window, cx));
+
+    editor
+        .condition::<crate::EditorEvent>(cx, |editor, cx| !editor.buffer.read(cx).is_parsing(cx))
+        .await;
+
+    // Test 1: Cursor on a letter of a string word
+    editor.update_in(cx, |editor, window, cx| {
+        editor.change_selections(None, window, cx, |s| {
+            s.select_display_ranges([
+                DisplayPoint::new(DisplayRow(3), 17)..DisplayPoint::new(DisplayRow(3), 17)
+            ]);
+        });
+    });
+    editor.update_in(cx, |editor, window, cx| {
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "hˇello world";
+                }
+            "#},
+            cx,
+        );
+        editor.select_larger_syntax_node(&SelectLargerSyntaxNode, window, cx);
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "«ˇhello» world";
+                }
+            "#},
+            cx,
+        );
+    });
+
+    // Test 2: Partial selection within a word
+    editor.update_in(cx, |editor, window, cx| {
+        editor.change_selections(None, window, cx, |s| {
+            s.select_display_ranges([
+                DisplayPoint::new(DisplayRow(3), 17)..DisplayPoint::new(DisplayRow(3), 19)
+            ]);
+        });
+    });
+    editor.update_in(cx, |editor, window, cx| {
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "h«elˇ»lo world";
+                }
+            "#},
+            cx,
+        );
+        editor.select_larger_syntax_node(&SelectLargerSyntaxNode, window, cx);
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "«ˇhello» world";
+                }
+            "#},
+            cx,
+        );
+    });
+
+    // Test 3: Complete word already selected
+    editor.update_in(cx, |editor, window, cx| {
+        editor.change_selections(None, window, cx, |s| {
+            s.select_display_ranges([
+                DisplayPoint::new(DisplayRow(3), 16)..DisplayPoint::new(DisplayRow(3), 21)
+            ]);
+        });
+    });
+    editor.update_in(cx, |editor, window, cx| {
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "«helloˇ» world";
+                }
+            "#},
+            cx,
+        );
+        editor.select_larger_syntax_node(&SelectLargerSyntaxNode, window, cx);
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "«hello worldˇ»";
+                }
+            "#},
+            cx,
+        );
+    });
+
+    // Test 4: Selection spanning across words
+    editor.update_in(cx, |editor, window, cx| {
+        editor.change_selections(None, window, cx, |s| {
+            s.select_display_ranges([
+                DisplayPoint::new(DisplayRow(3), 19)..DisplayPoint::new(DisplayRow(3), 24)
+            ]);
+        });
+    });
+    editor.update_in(cx, |editor, window, cx| {
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "hel«lo woˇ»rld";
+                }
+            "#},
+            cx,
+        );
+        editor.select_larger_syntax_node(&SelectLargerSyntaxNode, window, cx);
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    let var1 = "«ˇhello world»";
+                }
+            "#},
+            cx,
+        );
+    });
+
+    // Test 5: Expansion beyond string
+    editor.update_in(cx, |editor, window, cx| {
+        editor.select_larger_syntax_node(&SelectLargerSyntaxNode, window, cx);
+        editor.select_larger_syntax_node(&SelectLargerSyntaxNode, window, cx);
+        assert_text_with_selections(
+            editor,
+            indoc! {r#"
+                use mod1::mod2::{mod3, mod4};
+
+                fn fn_1(param1: bool, param2: &str) {
+                    «ˇlet var1 = "hello world";»
                 }
             "#},
             cx,
@@ -9924,7 +10134,7 @@ async fn test_completion_with_mode_specified_by_action(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
-async fn test_completion_replacing_suffix_in_multicursors(cx: &mut TestAppContext) {
+async fn test_completion_replacing_surrounding_text_with_multicursors(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
     let mut cx = EditorLspTestContext::new_rust(
         lsp::ServerCapabilities {
@@ -9938,6 +10148,8 @@ async fn test_completion_replacing_suffix_in_multicursors(cx: &mut TestAppContex
     )
     .await;
 
+    // scenario: surrounding text matches completion text
+    let completion_text = "to_offset";
     let initial_state = indoc! {"
         1. buf.to_offˇsuffix
         2. buf.to_offˇsuf
@@ -9968,7 +10180,6 @@ async fn test_completion_replacing_suffix_in_multicursors(cx: &mut TestAppContex
 
         buf.<to_off|suffix>  // newest cursor
     "};
-    let completion_text = "to_offset";
     let expected = indoc! {"
         1. buf.to_offsetˇ
         2. buf.to_offsetˇsuf
@@ -9984,24 +10195,122 @@ async fn test_completion_replacing_suffix_in_multicursors(cx: &mut TestAppContex
 
         buf.to_offsetˇ  // newest cursor
     "};
-
     cx.set_state(initial_state);
     cx.update_editor(|editor, window, cx| {
         editor.show_completions(&ShowCompletions { trigger: None }, window, cx);
     });
-
-    let counter = Arc::new(AtomicUsize::new(0));
     handle_completion_request_with_insert_and_replace(
         &mut cx,
         completion_marked_buffer,
         vec![completion_text],
-        counter.clone(),
+        Arc::new(AtomicUsize::new(0)),
     )
     .await;
     cx.condition(|editor, _| editor.context_menu_visible())
         .await;
-    assert_eq!(counter.load(atomic::Ordering::Acquire), 1);
+    let apply_additional_edits = cx.update_editor(|editor, window, cx| {
+        editor
+            .confirm_completion_replace(&ConfirmCompletionReplace, window, cx)
+            .unwrap()
+    });
+    cx.assert_editor_state(expected);
+    handle_resolve_completion_request(&mut cx, None).await;
+    apply_additional_edits.await.unwrap();
 
+    // scenario: surrounding text matches surroundings of newest cursor, inserting at the end
+    let completion_text = "foo_and_bar";
+    let initial_state = indoc! {"
+        1. ooanbˇ
+        2. zooanbˇ
+        3. ooanbˇz
+        4. zooanbˇz
+        5. ooanˇ
+        6. oanbˇ
+
+        ooanbˇ
+    "};
+    let completion_marked_buffer = indoc! {"
+        1. ooanb
+        2. zooanb
+        3. ooanbz
+        4. zooanbz
+        5. ooan
+        6. oanb
+
+        <ooanb|>
+    "};
+    let expected = indoc! {"
+        1. foo_and_barˇ
+        2. zfoo_and_barˇ
+        3. foo_and_barˇz
+        4. zfoo_and_barˇz
+        5. ooanfoo_and_barˇ
+        6. oanbfoo_and_barˇ
+
+        foo_and_barˇ
+    "};
+    cx.set_state(initial_state);
+    cx.update_editor(|editor, window, cx| {
+        editor.show_completions(&ShowCompletions { trigger: None }, window, cx);
+    });
+    handle_completion_request_with_insert_and_replace(
+        &mut cx,
+        completion_marked_buffer,
+        vec![completion_text],
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await;
+    cx.condition(|editor, _| editor.context_menu_visible())
+        .await;
+    let apply_additional_edits = cx.update_editor(|editor, window, cx| {
+        editor
+            .confirm_completion_replace(&ConfirmCompletionReplace, window, cx)
+            .unwrap()
+    });
+    cx.assert_editor_state(expected);
+    handle_resolve_completion_request(&mut cx, None).await;
+    apply_additional_edits.await.unwrap();
+
+    // scenario: surrounding text matches surroundings of newest cursor, inserted at the middle
+    // (expects the same as if it was inserted at the end)
+    let completion_text = "foo_and_bar";
+    let initial_state = indoc! {"
+        1. ooˇanb
+        2. zooˇanb
+        3. ooˇanbz
+        4. zooˇanbz
+
+        ooˇanb
+    "};
+    let completion_marked_buffer = indoc! {"
+        1. ooanb
+        2. zooanb
+        3. ooanbz
+        4. zooanbz
+
+        <oo|anb>
+    "};
+    let expected = indoc! {"
+        1. foo_and_barˇ
+        2. zfoo_and_barˇ
+        3. foo_and_barˇz
+        4. zfoo_and_barˇz
+
+        foo_and_barˇ
+    "};
+    cx.set_state(initial_state);
+    cx.update_editor(|editor, window, cx| {
+        editor.show_completions(&ShowCompletions { trigger: None }, window, cx);
+    });
+    handle_completion_request_with_insert_and_replace(
+        &mut cx,
+        completion_marked_buffer,
+        vec![completion_text],
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await;
+    cx.condition(|editor, _| editor.context_menu_visible())
+        .await;
     let apply_additional_edits = cx.update_editor(|editor, window, cx| {
         editor
             .confirm_completion_replace(&ConfirmCompletionReplace, window, cx)
@@ -19237,6 +19546,64 @@ println!("5");
                 "No folds: even after enabling the restoration, previous editor's data should not be saved to be used for the restoration"
             );
         })
+    });
+}
+
+#[gpui::test]
+async fn test_hide_mouse_context_menu_on_modal_opened(cx: &mut TestAppContext) {
+    struct EmptyModalView {
+        focus_handle: gpui::FocusHandle,
+    }
+    impl EventEmitter<DismissEvent> for EmptyModalView {}
+    impl Render for EmptyModalView {
+        fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+            div()
+        }
+    }
+    impl Focusable for EmptyModalView {
+        fn focus_handle(&self, _cx: &App) -> gpui::FocusHandle {
+            self.focus_handle.clone()
+        }
+    }
+    impl workspace::ModalView for EmptyModalView {}
+    fn new_empty_modal_view(cx: &App) -> EmptyModalView {
+        EmptyModalView {
+            focus_handle: cx.focus_handle(),
+        }
+    }
+
+    init_test(cx, |_| {});
+
+    let fs = FakeFs::new(cx.executor());
+    let project = Project::test(fs, [], cx).await;
+    let workspace = cx.add_window(|window, cx| Workspace::test_new(project.clone(), window, cx));
+    let buffer = cx.update(|cx| MultiBuffer::build_simple("hello world!", cx));
+    let cx = &mut VisualTestContext::from_window(*workspace.deref(), cx);
+    let editor = cx.new_window_entity(|window, cx| {
+        Editor::new(
+            EditorMode::full(),
+            buffer,
+            Some(project.clone()),
+            window,
+            cx,
+        )
+    });
+    workspace
+        .update(cx, |workspace, window, cx| {
+            workspace.add_item_to_active_pane(Box::new(editor.clone()), None, true, window, cx);
+        })
+        .unwrap();
+    editor.update_in(cx, |editor, window, cx| {
+        editor.open_context_menu(&OpenContextMenu, window, cx);
+        assert!(editor.mouse_context_menu.is_some());
+    });
+    workspace
+        .update(cx, |workspace, window, cx| {
+            workspace.toggle_modal(window, cx, |_, cx| new_empty_modal_view(cx));
+        })
+        .unwrap();
+    cx.read(|cx| {
+        assert!(editor.read(cx).mouse_context_menu.is_none());
     });
 }
 
