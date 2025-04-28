@@ -946,6 +946,7 @@ pub struct Editor {
     pub change_list: ChangeList,
     inline_value_cache: InlineValueCache,
     drag_selection_head: Option<DisplayPoint>,
+    dragging: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -1761,6 +1762,7 @@ impl Editor {
                 .unwrap_or_default(),
             change_list: ChangeList::new(),
             drag_selection_head: None,
+            dragging: false,
         };
         if let Some(breakpoints) = this.breakpoint_store.as_ref() {
             this._subscriptions
@@ -3226,6 +3228,7 @@ impl Editor {
         cx: &mut Context<Self>,
     ) {
         self.drag_selection_head = head;
+        self.dragging = true;
         self.apply_scroll_delta(scroll_delta, window, cx);
         cx.notify()
     }
@@ -3237,11 +3240,12 @@ impl Editor {
         cx: &mut App,
     ) -> bool {
         if self.drag_selection_head.is_some() {
-            let selection = self.selections.disjoint[0].clone();
             let snapshot = self.snapshot(window, cx);
-            let start = selection.start.to_display_point(&snapshot);
-            let end = selection.end.to_display_point(&snapshot);
-            point >= start && point <= end
+            self.selections.disjoint.iter().any(|s| {
+                let start = s.start.to_display_point(&snapshot);
+                let end = s.end.to_display_point(&snapshot);
+                point >= start && point <= end
+            })
         } else {
             false
         }
@@ -9704,6 +9708,7 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.dragging = false;
         let display_map = self.display_map.update(cx, |map, cx| map.snapshot(cx));
         let buffer = &display_map.buffer_snapshot;
         let mut edits = Vec::new();

@@ -618,12 +618,8 @@ impl EditorElement {
             return;
         }
 
-        if click_count == 1 {
-            if editor.is_intersect_drag_selection(*display_point, window, cx) {
-                return;
-            } else {
-                editor.drag_selection_head = None;
-            }
+        if click_count == 1 && editor.is_intersect_drag_selection(*display_point, window, cx) {
+            return;
         }
 
         let is_singleton = editor.buffer().read(cx).is_singleton();
@@ -812,20 +808,35 @@ impl EditorElement {
         cx: &mut Context<Editor>,
     ) {
         let text_hitbox = &position_map.text_hitbox;
-        let end_selection = editor.has_pending_selection();
         let pending_nonempty_selections = editor.has_pending_nonempty_selection();
         let point_for_position = position_map.point_for_position(event.position);
         let display_point = &point_for_position.previous_valid;
 
-        if editor.drag_selection_head.is_some() {
-            cx.stop_propagation();
-            if editor.is_intersect_drag_selection(*display_point, window, cx) {
+        if editor.is_intersect_drag_selection(*display_point, window, cx) {
+            if editor.dragging {
+                return;
+            } else {
+                editor.select(
+                    SelectPhase::Begin {
+                        position: display_point.clone(),
+                        add: false,
+                        click_count:1,
+                    },
+                    window,
+                    cx,
+                );
+                editor.drag_selection_head = None;
+            }
+        } else {
+            if editor.dragging {
+                cx.stop_propagation();
+                let is_cut = !event.modifiers.control;
+                editor.drop_selection(*display_point, is_cut, window, cx);
                 return;
             }
-            let is_cut = !event.modifiers.control;
-            editor.drop_selection(*display_point, is_cut, window, cx);
-            return;
         }
+
+        let end_selection = editor.has_pending_selection();
 
         if end_selection {
             editor.select(SelectPhase::End, window, cx);
