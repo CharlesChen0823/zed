@@ -3239,16 +3239,12 @@ impl Editor {
         window: &mut Window,
         cx: &mut App,
     ) -> bool {
-        if self.drag_selection_head.is_some() {
-            let snapshot = self.snapshot(window, cx);
-            self.selections.disjoint.iter().any(|s| {
-                let start = s.start.to_display_point(&snapshot);
-                let end = s.end.to_display_point(&snapshot);
-                point >= start && point <= end
-            })
-        } else {
-            false
-        }
+        let snapshot = self.snapshot(window, cx);
+        self.selections.disjoint.iter().any(|s| {
+            let start = s.start.to_display_point(&snapshot);
+            let end = s.end.to_display_point(&snapshot);
+            point >= start && point <= end
+        })
     }
 
     pub fn cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {

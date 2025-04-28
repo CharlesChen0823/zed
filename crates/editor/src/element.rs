@@ -814,6 +814,7 @@ impl EditorElement {
 
         if editor.is_intersect_drag_selection(*display_point, window, cx) {
             if editor.dragging {
+                editor.dragging = false;
                 return;
             } else {
                 editor.select(
