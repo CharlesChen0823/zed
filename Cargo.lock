@@ -690,6 +690,7 @@ dependencies = [
  "pretty_assertions",
  "project",
  "rand 0.8.5",
+ "regex",
  "serde",
  "serde_json",
  "settings",
@@ -731,6 +732,7 @@ dependencies = [
  "serde_json",
  "settings",
  "task",
+ "tempfile",
  "terminal",
  "terminal_view",
  "tree-sitter-rust",
@@ -4363,14 +4365,17 @@ name = "diagnostics"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cargo_metadata",
  "client",
  "collections",
  "component",
  "ctor",
  "editor",
  "env_logger 0.11.8",
+ "futures 0.3.31",
  "gpui",
  "indoc",
+ "itertools 0.14.0",
  "language",
  "linkme",
  "log",
@@ -4382,6 +4387,7 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
+ "smol",
  "text",
  "theme",
  "ui",
@@ -16878,18 +16884,22 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "client",
+ "component",
  "db",
+ "documented",
  "editor",
  "fuzzy",
  "gpui",
  "install_cli",
  "language",
+ "linkme",
  "picker",
  "project",
  "schemars",
  "serde",
  "settings",
  "telemetry",
+ "theme",
  "ui",
  "util",
  "vim_mode_setting",
@@ -18465,7 +18475,7 @@ dependencies = [
 
 [[package]]
 name = "zed"
-version = "0.185.0"
+version = "0.186.0"
 dependencies = [
  "activity_indicator",
  "agent",
