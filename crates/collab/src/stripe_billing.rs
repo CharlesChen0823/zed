@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::{Cents, Result, llm};
+use crate::llm::{self, AGENT_EXTENDED_TRIAL_FEATURE_FLAG};
+use crate::{Cents, Result};
 use anyhow::{Context as _, anyhow};
 use chrono::{Datelike, Utc};
 use collections::HashMap;
@@ -80,13 +81,21 @@ impl StripeBilling {
         Ok(())
     }
 
-    pub async fn find_price_by_lookup_key(&self, lookup_key: &str) -> Result<stripe::Price> {
+    pub async fn zed_pro_price_id(&self) -> Result<PriceId> {
+        self.find_price_id_by_lookup_key("zed-pro").await
+    }
+
+    pub async fn zed_free_price_id(&self) -> Result<PriceId> {
+        self.find_price_id_by_lookup_key("zed-free").await
+    }
+
+    pub async fn find_price_id_by_lookup_key(&self, lookup_key: &str) -> Result<PriceId> {
         self.state
             .read()
             .await
             .prices_by_lookup_key
             .get(lookup_key)
-            .cloned()
+            .map(|price| price.id.clone())
             .ok_or_else(|| crate::Error::Internal(anyhow!("no price ID found for {lookup_key:?}")))
     }
 
@@ -462,19 +471,20 @@ impl StripeBilling {
         Ok(session.url.context("no checkout session URL")?)
     }
 
-    pub async fn checkout_with_price(
+    pub async fn checkout_with_zed_pro(
         &self,
-        price_id: PriceId,
         customer_id: stripe::CustomerId,
         github_login: &str,
         success_url: &str,
     ) -> Result<String> {
+        let zed_pro_price_id = self.zed_pro_price_id().await?;
+
         let mut params = stripe::CreateCheckoutSession::new();
         params.mode = Some(stripe::CheckoutSessionMode::Subscription);
         params.customer = Some(customer_id);
         params.client_reference_id = Some(github_login);
         params.line_items = Some(vec![stripe::CreateCheckoutSessionLineItems {
-            price: Some(price_id.to_string()),
+            price: Some(zed_pro_price_id.to_string()),
             quantity: Some(1),
             ..Default::default()
         }]);
@@ -486,19 +496,40 @@ impl StripeBilling {
 
     pub async fn checkout_with_zed_pro_trial(
         &self,
-        zed_pro_price_id: PriceId,
         customer_id: stripe::CustomerId,
         github_login: &str,
+        feature_flags: Vec<String>,
         success_url: &str,
     ) -> Result<String> {
+        let zed_pro_price_id = self.zed_pro_price_id().await?;
+
+        let eligible_for_extended_trial = feature_flags
+            .iter()
+            .any(|flag| flag == AGENT_EXTENDED_TRIAL_FEATURE_FLAG);
+
+        let trial_period_days = if eligible_for_extended_trial { 60 } else { 14 };
+
+        let mut subscription_metadata = std::collections::HashMap::new();
+        if eligible_for_extended_trial {
+            subscription_metadata.insert(
+                "promo_feature_flag".to_string(),
+                AGENT_EXTENDED_TRIAL_FEATURE_FLAG.to_string(),
+            );
+        }
+
         let mut params = stripe::CreateCheckoutSession::new();
         params.subscription_data = Some(stripe::CreateCheckoutSessionSubscriptionData {
-            trial_period_days: Some(14),
+            trial_period_days: Some(trial_period_days),
             trial_settings: Some(stripe::CreateCheckoutSessionSubscriptionDataTrialSettings {
                 end_behavior: stripe::CreateCheckoutSessionSubscriptionDataTrialSettingsEndBehavior {
                     missing_payment_method: stripe::CreateCheckoutSessionSubscriptionDataTrialSettingsEndBehaviorMissingPaymentMethod::Pause,
                 }
             }),
+            metadata: if !subscription_metadata.is_empty() {
+                Some(subscription_metadata)
+            } else {
+                None
+            },
             ..Default::default()
         });
         params.mode = Some(stripe::CheckoutSessionMode::Subscription);
