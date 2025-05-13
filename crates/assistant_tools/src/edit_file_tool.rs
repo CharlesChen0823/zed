@@ -5,7 +5,8 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use assistant_tool::{
-    ActionLog, AnyToolCard, Tool, ToolCard, ToolResult, ToolResultOutput, ToolUseStatus,
+    ActionLog, AnyToolCard, Tool, ToolCard, ToolResult, ToolResultContent, ToolResultOutput,
+    ToolUseStatus,
 };
 use buffer_diff::{BufferDiff, BufferDiffSnapshot};
 use editor::{Editor, EditorMode, MultiBuffer, PathKey};
@@ -292,7 +293,10 @@ impl Tool for EditFileTool {
                 }
             } else {
                 Ok(ToolResultOutput {
-                    content: format!("Edited {}:\n\n```diff\n{}\n```", input_path, diff),
+                    content: ToolResultContent::Text(format!(
+                        "Edited {}:\n\n```diff\n{}\n```",
+                        input_path, diff
+                    )),
                     output: serde_json::to_value(output).ok(),
                 })
             }
@@ -637,7 +641,7 @@ impl ToolCard for EditFileToolCard {
                 .p_3()
                 .gap_1()
                 .border_t_1()
-                .rounded_md()
+                .rounded_b_md()
                 .border_color(border_color)
                 .bg(cx.theme().colors().editor_background);
 
