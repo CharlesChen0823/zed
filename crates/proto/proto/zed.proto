@@ -386,7 +386,13 @@ message Envelope {
         LspExtRunFlycheck lsp_ext_run_flycheck = 346;
         LspExtClearFlycheck lsp_ext_clear_flycheck = 347;
 
-        LogToDebugConsole log_to_debug_console = 348; // current max
+        LogToDebugConsole log_to_debug_console = 348;
+        PrepareCallHierarchy prepare_call_hierarchy = 349;
+        PrepareCallHierarchyResponse prepare_call_hierarchy_response = 350;
+        CallHierarchyIncomings call_hierarchy_incomings = 351;
+        CallHierarchyIncomingsResponse call_hierarchy_incomings_response = 352;
+        CallHierarchyOutgoings call_hierarchy_outgoings = 353;
+        CallHierarchyOutgoingsResponse call_hierarchy_outgoings_response = 354; // current max
     }
 
     reserved 87 to 88;

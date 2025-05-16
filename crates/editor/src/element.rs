@@ -558,6 +558,20 @@ impl EditorElement {
             register_action(editor, window, Editor::enable_breakpoint);
             register_action(editor, window, Editor::disable_breakpoint);
         }
+        register_action(view, cx, |editor, action, cx| {
+            if let Some(task) = editor.call_hierarchy_incoming(action, cx) {
+                task.detach_and_log_err(cx);
+            } else {
+                cx.propagate();
+            }
+        });
+        register_action(view, cx, |editor, action, cx| {
+            if let Some(task) = editor.call_hierarchy_outgoing(action, cx) {
+                task.detach_and_log_err(cx);
+            } else {
+                cx.propagate();
+            }
+        });
     }
 
     fn register_key_listeners(&self, window: &mut Window, _: &mut App, layout: &EditorLayout) {

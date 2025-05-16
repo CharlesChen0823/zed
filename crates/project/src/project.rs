@@ -75,7 +75,7 @@ use language::{
     Unclipped, language_settings::InlayHintKind, proto::split_operations,
 };
 use lsp::{
-    CodeActionKind, CompletionContext, CompletionItemKind, DocumentHighlightKind, InsertTextMode,
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CodeActionKind, CompletionContext, CompletionItemKind, DocumentHighlightKind, InsertTextMode,
     LanguageServerId, LanguageServerName, MessageActionItem,
 };
 use lsp_command::*;
@@ -3523,6 +3523,58 @@ impl Project {
     ) -> Task<Result<PrepareRenameResponse>> {
         let position = position.to_point_utf16(buffer.read(cx));
         self.prepare_rename_impl(buffer, position, cx)
+    }
+
+    fn prepare_call_hierarchy_impl(
+        &mut self,
+        buffer: Model<Buffer>,
+        position: PointUtf16,
+        cx: &mut ModelContext<Self>,
+    ) -> Task<Result<Option<Vec<CallHierarchyItem>>>> {
+        self.request_lsp(
+            buffer,
+            LanguageServerToQuery::Primary,
+            PrepareCallHierarchy { position },
+            cx,
+        )
+    }
+
+    pub fn prepare_call_hierarchy<T: ToPointUtf16>(
+        &mut self,
+        buffer: Model<Buffer>,
+        position: T,
+        cx: &mut ModelContext<Self>,
+    ) -> Task<Result<Option<Vec<CallHierarchyItem>>>> {
+        let position = position.to_point_utf16(buffer.read(cx));
+        self.prepare_call_hierarchy_impl(buffer, position, cx)
+    }
+
+    pub fn call_hierarchy_incomings(
+        &mut self,
+        buffer: Model<Buffer>,
+        item: CallHierarchyItem,
+        cx: &mut ModelContext<Self>,
+    ) -> Task<Result<Option<Vec<CallHierarchyIncomingCall>>>> {
+        self.request_lsp(
+            buffer,
+            LanguageServerToQuery::Primary,
+            CallHierarchyIncomings { item: item },
+            cx,
+        )
+    }
+
+    pub fn call_hierarchy_outgoings(
+        &mut self,
+        buffer: Model<Buffer>,
+        item: CallHierarchyItem,
+        cx: &mut ModelContext<Self>,
+    ) -> Task<Result<Option<Vec<CallHierarchyOutgoingCall>>>> {
+        self.request_lsp(
+            buffer,
+            LanguageServerToQuery::Primary,
+            CallHierarchyOutgoings { item: item },
+            cx,
+        )
     }
 
     pub fn perform_rename<T: ToPointUtf16>(

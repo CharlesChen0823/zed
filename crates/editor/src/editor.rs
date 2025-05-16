@@ -14597,6 +14597,78 @@ impl Editor {
         });
     }
 
+    pub fn call_hierarchy_incoming(
+        &mut self,
+        _: &CallHierarchyIncoming,
+        cx: &mut ViewContext<Self>,
+    ) -> Option<Task<Result<()>>> {
+        let buffer = self.buffer.read(cx);
+        let newest_selection = self.selections.newest_anchor().clone();
+        let cursor_position = newest_selection.head();
+        let (cursor_buffer, cursor_buffer_position) =
+            buffer.text_anchor_for_position(cursor_position, cx)?;
+
+        let Some(project) = self.project.as_ref().cloned() else {
+            return None;
+        };
+        let tasks = project.update(cx, |project, cx| {
+            project.prepare_call_hierarchy(cursor_buffer.clone(), cursor_buffer_position, cx)
+        });
+
+        Some(cx.spawn(|_, mut cx| async move {
+            let Some(call_hierarchy_items) = tasks.await? else {
+                return Ok(());
+            };
+            let project = project.clone();
+            let mut tasks = Vec::new();
+            for item in call_hierarchy_items.into_iter() {
+                tasks.push(project.update(&mut cx, |project, cx| {
+                    project.call_hierarchy_incomings(cursor_buffer.clone(), item, cx)
+                })?);
+            }
+            let tasks = futures::future::join_all(tasks).await;
+            dbg!(&tasks);
+
+            Ok(())
+        }))
+    }
+
+    pub fn call_hierarchy_outgoing(
+        &mut self,
+        _: &CallHierarchyOutgoing,
+        cx: &mut ViewContext<Self>,
+    ) -> Option<Task<Result<()>>> {
+        let buffer = self.buffer.read(cx);
+        let newest_selection = self.selections.newest_anchor().clone();
+        let cursor_position = newest_selection.head();
+        let (cursor_buffer, cursor_buffer_position) =
+            buffer.text_anchor_for_position(cursor_position, cx)?;
+
+        let Some(project) = self.project.as_ref().cloned() else {
+            return None;
+        };
+        let tasks = project.update(cx, |project, cx| {
+            project.prepare_call_hierarchy(cursor_buffer.clone(), cursor_buffer_position, cx)
+        });
+
+        Some(cx.spawn(|_, mut cx| async move {
+            let Some(call_hierarchy_items) = tasks.await? else {
+                return Ok(());
+            };
+            let project = project.clone();
+            let mut tasks = Vec::new();
+            for item in call_hierarchy_items.into_iter() {
+                tasks.push(project.update(&mut cx, |project, cx| {
+                    project.call_hierarchy_outgoings(cursor_buffer.clone(), item, cx)
+                })?);
+            }
+            let tasks = futures::future::join_all(tasks).await;
+            dbg!(&tasks);
+
+            Ok(())
+        }))
+    }
+
     pub fn rename(
         &mut self,
         _: &Rename,

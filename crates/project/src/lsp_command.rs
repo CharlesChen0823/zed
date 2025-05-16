@@ -23,7 +23,7 @@ use language::{
     range_from_lsp, range_to_lsp,
 };
 use lsp::{
-    AdapterServerCapabilities, CodeActionKind, CodeActionOptions, CompletionContext,
+    AdapterServerCapabilities, CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CodeActionKind, CodeActionOptions, CompletionContext,
     CompletionListItemDefaultsEditRange, CompletionTriggerKind, DocumentHighlightKind,
     LanguageServer, LanguageServerId, LinkedEditingRangeServerCapabilities, OneOf, RenameOptions,
     ServerCapabilities,
@@ -256,6 +256,286 @@ pub(crate) struct LinkedEditingRange {
     pub position: Anchor,
 }
 
+#[derive(Debug)]
+pub(crate) struct PrepareCallHierarchy {
+    pub position: PointUtf16,
+}
+
+#[derive(Debug)]
+pub(crate) struct CallHierarchyIncomings {
+    pub item: CallHierarchyItem,
+}
+
+#[derive(Debug)]
+pub(crate) struct CallHierarchyOutgoings {
+    pub item: CallHierarchyItem,
+}
+
+#[async_trait(?Send)]
+impl LspCommand for PrepareCallHierarchy {
+    type Response = Option<Vec<CallHierarchyItem>>;
+    type LspRequest = lsp::request::CallHierarchyPrepare;
+    type ProtoRequest = proto::PrepareCallHierarchy;
+
+    fn check_capabilities(&self, capabilities: AdapterServerCapabilities) -> bool {
+        match capabilities.server_capabilities.call_hierarchy_provider {
+            Some(lsp::CallHierarchyServerCapability::Simple(enabled)) => enabled,
+            Some(lsp::CallHierarchyServerCapability::Options(_)) => true,
+            None => false,
+        }
+    }
+
+    fn to_lsp(
+        &self,
+        path: &Path,
+        _: &Buffer,
+        _: &Arc<LanguageServer>,
+        _: &AppContext,
+    ) -> lsp::CallHierarchyPrepareParams {
+        lsp::CallHierarchyPrepareParams {
+            text_document_position_params: lsp::TextDocumentPositionParams {
+                text_document: lsp::TextDocumentIdentifier {
+                    uri: lsp::Url::from_file_path(path).unwrap(),
+                },
+                position: point_to_lsp(self.position),
+            },
+            work_done_progress_params: lsp::WorkDoneProgressParams {
+                work_done_token: Default::default(),
+            },
+        }
+    }
+
+    async fn response_from_lsp(
+        self,
+        call_hierarchy_items: Option<Vec<CallHierarchyItem>>,
+        _: Model<LspStore>,
+        buffer: Model<Buffer>,
+        _: LanguageServerId,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self::Response> {
+        dbg!(&call_hierarchy_items);
+        let Some(call_hierarchy_items) = call_hierarchy_items else {
+            return Ok(None);
+        };
+        Ok(Some(call_hierarchy_items))
+    }
+
+    fn to_proto(&self, project_id: u64, buffer: &Buffer) -> proto::PrepareCallHierarchy {
+        proto::PrepareCallHierarchy {
+            project_id,
+            buffer_id: buffer.remote_id().into(),
+            position: Some(language::proto::serialize_anchor(
+                &buffer.anchor_before(self.position),
+            )),
+        }
+    }
+
+    async fn from_proto(
+        message: proto::PrepareCallHierarchy,
+        _: Model<LspStore>,
+        buffer: Model<Buffer>,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self> {
+        let position = message
+            .position
+            .and_then(deserialize_anchor)
+            .ok_or_else(|| anyhow!("invalid position"))?;
+
+        Ok(Self {
+            position: buffer.update(&mut cx, |buffer, _| position.to_point_utf16(buffer))?,
+        })
+    }
+
+    fn response_to_proto(
+        call_hierarchy_items: Option<Vec<CallHierarchyItem>>,
+        _: &mut LspStore,
+        _: PeerId,
+        _: &clock::Global,
+        _: &mut AppContext,
+    ) -> proto::PrepareCallHierarchyResponse {
+        proto::PrepareCallHierarchyResponse {
+            call_hierarchy_item: vec![],
+        }
+    }
+
+    async fn response_from_proto(
+        self,
+        message: proto::PrepareCallHierarchyResponse,
+        _: Model<LspStore>,
+        buffer: Model<Buffer>,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self::Response> {
+        Ok(None)
+    }
+
+    fn buffer_id_from_proto(message: &proto::PrepareCallHierarchy) -> Result<BufferId> {
+        BufferId::new(message.buffer_id)
+    }
+}
+
+#[async_trait(?Send)]
+impl LspCommand for CallHierarchyIncomings {
+    type Response = Option<Vec<CallHierarchyIncomingCall>>;
+    type LspRequest = lsp::request::CallHierarchyIncomingCalls;
+    type ProtoRequest = proto::CallHierarchyIncomings;
+
+    fn to_lsp(
+        &self,
+        _: &Path,
+        _: &Buffer,
+        _: &Arc<LanguageServer>,
+        _: &AppContext,
+    ) -> lsp::CallHierarchyIncomingCallsParams {
+        lsp::CallHierarchyIncomingCallsParams {
+            item: self.item.clone(),
+            partial_result_params: lsp::PartialResultParams {
+                partial_result_token: Default::default(),
+            },
+            work_done_progress_params: lsp::WorkDoneProgressParams {
+                work_done_token: Default::default(),
+            },
+        }
+    }
+
+    async fn response_from_lsp(
+        self,
+        call_hierarchy_incoming_items: Option<Vec<CallHierarchyIncomingCall>>,
+        _: Model<LspStore>,
+        _: Model<Buffer>,
+        _: LanguageServerId,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self::Response> {
+        let Some(call_hierarchy_incoming_items) = call_hierarchy_incoming_items else {
+            return Ok(None);
+        };
+        Ok(Some(call_hierarchy_incoming_items))
+    }
+
+    fn to_proto(&self, project_id: u64, buffer: &Buffer) -> proto::CallHierarchyIncomings {
+        proto::CallHierarchyIncomings {
+            project_id,
+            buffer_id: buffer.remote_id().to_proto(),
+            item: todo!(),
+        }
+    }
+
+    async fn from_proto(
+        message: proto::CallHierarchyIncomings,
+        _: Model<LspStore>,
+        buffer: Model<Buffer>,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self> {
+        Ok(Self { item: todo!() })
+    }
+
+    fn response_to_proto(
+        call_hierarchy_incomings_items: Option<Vec<CallHierarchyIncomingCall>>,
+        _: &mut LspStore,
+        _: PeerId,
+        _: &clock::Global,
+        _: &mut AppContext,
+    ) -> proto::CallHierarchyIncomingsResponse {
+        proto::CallHierarchyIncomingsResponse {
+            call_hierarchy_incomings_item: vec![],
+        }
+    }
+
+    async fn response_from_proto(
+        self,
+        message: proto::CallHierarchyIncomingsResponse,
+        _: Model<LspStore>,
+        buffer: Model<Buffer>,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self::Response> {
+        Ok(None)
+    }
+
+    fn buffer_id_from_proto(message: &proto::CallHierarchyIncomings) -> Result<BufferId> {
+        BufferId::new(message.buffer_id)
+    }
+}
+
+#[async_trait(?Send)]
+impl LspCommand for CallHierarchyOutgoings {
+    type Response = Option<Vec<CallHierarchyOutgoingCall>>;
+    type LspRequest = lsp::request::CallHierarchyOutgoingCalls;
+    type ProtoRequest = proto::CallHierarchyOutgoings;
+
+    fn to_lsp(
+        &self,
+        _: &Path,
+        _: &Buffer,
+        _: &Arc<LanguageServer>,
+        _: &AppContext,
+    ) -> lsp::CallHierarchyOutgoingCallsParams {
+        lsp::CallHierarchyOutgoingCallsParams {
+            item: self.item.clone(),
+            partial_result_params: lsp::PartialResultParams {
+                partial_result_token: Default::default(),
+            },
+            work_done_progress_params: lsp::WorkDoneProgressParams {
+                work_done_token: Default::default(),
+            },
+        }
+    }
+
+    async fn response_from_lsp(
+        self,
+        call_hierarchy_outgoing_items: Option<Vec<CallHierarchyOutgoingCall>>,
+        _: Model<LspStore>,
+        _: Model<Buffer>,
+        _: LanguageServerId,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self::Response> {
+        let Some(call_hierarchy_outgoing_items) = call_hierarchy_outgoing_items else {
+            return Ok(None);
+        };
+        Ok(Some(call_hierarchy_outgoing_items))
+    }
+
+    fn to_proto(&self, project_id: u64, buffer: &Buffer) -> proto::CallHierarchyOutgoings {
+        proto::CallHierarchyOutgoings {
+            project_id,
+            buffer_id: buffer.remote_id().to_proto(),
+            item: todo!(),
+        }
+    }
+
+    async fn from_proto(
+        message: proto::CallHierarchyOutgoings,
+        _: Model<LspStore>,
+        buffer: Model<Buffer>,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self> {
+        Ok(Self { item: todo!() })
+    }
+
+    fn response_to_proto(
+        call_hierarchy_outgoings_items: Option<Vec<CallHierarchyOutgoingCall>>,
+        _: &mut LspStore,
+        _: PeerId,
+        _: &clock::Global,
+        _: &mut AppContext,
+    ) -> proto::CallHierarchyOutgoingsResponse {
+        proto::CallHierarchyOutgoingsResponse {
+            call_hierarchy_outgoings_item: vec![],
+        }
+    }
+
+    async fn response_from_proto(
+        self,
+        message: proto::CallHierarchyOutgoingsResponse,
+        _: Model<LspStore>,
+        buffer: Model<Buffer>,
+        mut cx: AsyncAppContext,
+    ) -> Result<Self::Response> {
+        Ok(None)
+    }
+
+    fn buffer_id_from_proto(message: &proto::CallHierarchyOutgoings) -> Result<BufferId> {
+        BufferId::new(message.buffer_id)
+    }
+}
 #[async_trait(?Send)]
 impl LspCommand for PrepareRename {
     type Response = PrepareRenameResponse;

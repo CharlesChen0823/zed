@@ -248,6 +248,8 @@ actions!(
         ApplyAllDiffHunks,
         ApplyDiffHunk,
         Backspace,
+        CallHierarchyIncoming,
+        CallHierarchyOutgoing,
         Cancel,
         CancelFlycheck,
         CancelLanguageServerWork,

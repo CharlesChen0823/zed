@@ -747,3 +747,33 @@ message LspExtClearFlycheck {
     uint64 buffer_id = 2;
     uint64 language_server_id = 3;
 }
+
+message PrepareCallHierarchy {
+    uint64 project_id = 1;
+    uint64 buffer_id = 2;
+    Anchor position = 3;
+}
+
+message PrepareCallHierarchyResponse {
+    repeated bytes call_hierarchy_item = 1;
+}
+
+message CallHierarchyIncomings {
+    uint64 project_id = 1;
+    uint64 buffer_id = 2;
+    bytes item = 3;
+}
+
+message CallHierarchyIncomingsResponse {
+    repeated bytes call_hierarchy_incomings_item = 1;
+}
+
+message CallHierarchyOutgoings {
+    uint64 project_id = 1;
+    uint64 buffer_id = 2;
+    bytes item = 3;
+}
+
+message CallHierarchyOutgoingsResponse {
+    repeated bytes call_hierarchy_outgoings_item = 1;
+}
