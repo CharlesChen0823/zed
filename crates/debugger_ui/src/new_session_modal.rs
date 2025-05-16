@@ -1,8 +1,10 @@
 use collections::FxHashMap;
+use language::LanguageRegistry;
 use std::{
     borrow::Cow,
     ops::Not,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
     usize,
 };
@@ -81,6 +83,7 @@ impl NewSessionModal {
             return;
         };
         let task_store = workspace.project().read(cx).task_store().clone();
+        let languages = workspace.app_state().languages.clone();
 
         cx.spawn_in(window, async move |workspace, cx| {
             workspace.update_in(cx, |workspace, window, cx| {
@@ -128,12 +131,17 @@ impl NewSessionModal {
                                     this.custom_mode.update(cx, |custom, cx| {
                                         custom.load(active_cwd, window, cx);
                                     });
+
+                                    this.debugger = None;
                                 }
 
                                 this.launch_picker.update(cx, |picker, cx| {
-                                    picker
-                                        .delegate
-                                        .task_contexts_loaded(task_contexts, window, cx);
+                                    picker.delegate.task_contexts_loaded(
+                                        task_contexts,
+                                        languages,
+                                        window,
+                                        cx,
+                                    );
                                     picker.refresh(window, cx);
                                     cx.notify();
                                 });
@@ -796,35 +804,9 @@ impl CustomMode {
             command
         };
 
-        let program = if let Some(program) = program.strip_prefix('~') {
-            format!(
-                "$ZED_WORKTREE_ROOT{}{}",
-                std::path::MAIN_SEPARATOR,
-                &program
-            )
-        } else if !program.starts_with(std::path::MAIN_SEPARATOR) {
-            format!(
-                "$ZED_WORKTREE_ROOT{}{}",
-                std::path::MAIN_SEPARATOR,
-                &program
-            )
-        } else {
-            program
-        };
-
-        let path = if path.starts_with('~') && !path.is_empty() {
-            format!(
-                "$ZED_WORKTREE_ROOT{}{}",
-                std::path::MAIN_SEPARATOR,
-                &path[1..]
-            )
-        } else if !path.starts_with(std::path::MAIN_SEPARATOR) && !path.is_empty() {
-            format!("$ZED_WORKTREE_ROOT{}{}", std::path::MAIN_SEPARATOR, &path)
-        } else {
-            path
-        };
-
         let args = args.collect::<Vec<_>>();
+
+        let (program, path) = resolve_paths(program, path);
 
         task::LaunchRequest {
             program,
@@ -944,9 +926,49 @@ impl DebugScenarioDelegate {
         }
     }
 
+    fn get_scenario_kind(
+        languages: &Arc<LanguageRegistry>,
+        dap_registry: &DapRegistry,
+        scenario: DebugScenario,
+    ) -> (Option<TaskSourceKind>, DebugScenario) {
+        let language_names = languages.language_names();
+        let language = dap_registry
+            .adapter_language(&scenario.adapter)
+            .map(|language| TaskSourceKind::Language {
+                name: language.into(),
+            });
+
+        let language = language.or_else(|| {
+            scenario
+                .request
+                .as_ref()
+                .and_then(|request| match request {
+                    DebugRequest::Launch(launch) => launch
+                        .program
+                        .rsplit_once(".")
+                        .and_then(|split| languages.language_name_for_extension(split.1))
+                        .map(|name| TaskSourceKind::Language { name: name.into() }),
+                    _ => None,
+                })
+                .or_else(|| {
+                    scenario.label.split_whitespace().find_map(|word| {
+                        language_names
+                            .iter()
+                            .find(|name| name.eq_ignore_ascii_case(word))
+                            .map(|name| TaskSourceKind::Language {
+                                name: name.to_owned().into(),
+                            })
+                    })
+                })
+        });
+
+        (language, scenario)
+    }
+
     pub fn task_contexts_loaded(
         &mut self,
         task_contexts: TaskContexts,
+        languages: Arc<LanguageRegistry>,
         _window: &mut Window,
         cx: &mut Context<Picker<Self>>,
     ) {
@@ -967,14 +989,16 @@ impl DebugScenarioDelegate {
             self.last_used_candidate_index = Some(recent.len() - 1);
         }
 
+        let dap_registry = cx.global::<DapRegistry>();
+
         self.candidates = recent
             .into_iter()
-            .map(|scenario| (None, scenario))
-            .chain(
-                scenarios
-                    .into_iter()
-                    .map(|(kind, scenario)| (Some(kind), scenario)),
-            )
+            .map(|scenario| Self::get_scenario_kind(&languages, &dap_registry, scenario))
+            .chain(scenarios.into_iter().map(|(kind, scenario)| {
+                let (language, scenario) =
+                    Self::get_scenario_kind(&languages, &dap_registry, scenario);
+                (language.or(Some(kind)), scenario)
+            }))
             .collect();
     }
 }
@@ -1069,7 +1093,7 @@ impl PickerDelegate for DebugScenarioDelegate {
             .get(self.selected_index())
             .and_then(|match_candidate| self.candidates.get(match_candidate.candidate_id).cloned());
 
-        let Some((_, debug_scenario)) = debug_scenario else {
+        let Some((_, mut debug_scenario)) = debug_scenario else {
             return;
         };
 
@@ -1083,6 +1107,19 @@ impl PickerDelegate for DebugScenarioDelegate {
                 ))
             })
             .unwrap_or_default();
+
+        if let Some(launch_config) =
+            debug_scenario
+                .request
+                .as_mut()
+                .and_then(|request| match request {
+                    DebugRequest::Launch(launch) => Some(launch),
+                    _ => None,
+                })
+        {
+            let (program, _) = resolve_paths(launch_config.program.clone(), String::new());
+            launch_config.program = program;
+        }
 
         self.debug_panel
             .update(cx, |panel, cx| {
@@ -1135,4 +1172,36 @@ impl PickerDelegate for DebugScenarioDelegate {
                 .child(highlighted_location.render(window, cx)),
         )
     }
+}
+
+fn resolve_paths(program: String, path: String) -> (String, String) {
+    let program = if let Some(program) = program.strip_prefix('~') {
+        format!(
+            "$ZED_WORKTREE_ROOT{}{}",
+            std::path::MAIN_SEPARATOR,
+            &program
+        )
+    } else if !program.starts_with(std::path::MAIN_SEPARATOR) {
+        format!(
+            "$ZED_WORKTREE_ROOT{}{}",
+            std::path::MAIN_SEPARATOR,
+            &program
+        )
+    } else {
+        program
+    };
+
+    let path = if path.starts_with('~') && !path.is_empty() {
+        format!(
+            "$ZED_WORKTREE_ROOT{}{}",
+            std::path::MAIN_SEPARATOR,
+            &path[1..]
+        )
+    } else if !path.starts_with(std::path::MAIN_SEPARATOR) && !path.is_empty() {
+        format!("$ZED_WORKTREE_ROOT{}{}", std::path::MAIN_SEPARATOR, &path)
+    } else {
+        path
+    };
+
+    (program, path)
 }
