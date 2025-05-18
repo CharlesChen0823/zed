@@ -4493,6 +4493,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "document_symbols"
+version = "0.1.0"
+dependencies = [
+ "editor",
+ "fuzzy",
+ "gpui",
+ "language",
+ "ordered-float 2.10.1",
+ "picker",
+ "settings",
+ "smol",
+ "theme",
+ "ui",
+ "util",
+ "workspace",
+ "workspace-hack",
+ "zed_actions",
+]
+
+[[package]]
 name = "documented"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -529,6 +529,13 @@ impl EditorElement {
                 cx.propagate();
             }
         });
+        register_action(editor, window, |editor, action, window, cx| {
+            if let Some(task) = editor.document_symbols(action, window, cx) {
+                task.detach_and_log_err(cx);
+            } else {
+                cx.propagate();
+            }
+        });
         register_action(editor, window, Editor::show_signature_help);
         register_action(editor, window, Editor::next_edit_prediction);
         register_action(editor, window, Editor::previous_edit_prediction);

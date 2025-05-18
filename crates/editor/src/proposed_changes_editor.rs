@@ -522,4 +522,12 @@ impl SemanticsProvider for BranchBufferSemanticsProvider {
     ) -> Option<Task<gpui::Result<project::ProjectTransaction>>> {
         None
     }
+
+    fn document_symbols(
+        &self,
+        _: &Entity<Buffer>,
+        _: &mut App,
+    ) -> Option<Task<gpui::Result<Vec<project::DocumentSymbol>>>> {
+        None
+    }
 }

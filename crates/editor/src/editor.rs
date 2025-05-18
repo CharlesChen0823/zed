@@ -19789,6 +19789,12 @@ pub trait SemanticsProvider {
         new_name: String,
         cx: &mut App,
     ) -> Option<Task<Result<ProjectTransaction>>>;
+
+    fn document_symbols(
+        &self,
+        buffer: &Entity<Buffer>,
+        cx: &mut App,
+    ) -> Option<Task<Result<Vec<DocumentSymbol>>>>;
 }
 
 pub trait CompletionProvider {
@@ -20298,6 +20304,14 @@ impl SemanticsProvider for Entity<Project> {
         Some(self.update(cx, |project, cx| {
             project.perform_rename(buffer.clone(), position, new_name, cx)
         }))
+    }
+
+    fn document_symbols(
+        &self,
+        buffer: &Entity<Buffer>,
+        cx: &mut App,
+    ) -> Option<Task<Result<Vec<DocumentSymbol>>>> {
+        Some(self.update(cx, |project, cx| project.document_symbols(buffer, cx)))
     }
 }
 

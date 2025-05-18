@@ -148,6 +148,12 @@ pub mod command_palette {
     actions!(command_palette, [Toggle]);
 }
 
+pub mod document_symbols {
+    use gpui::actions;
+
+    actions!(document_symbols, [Toggle]);
+}
+
 pub mod feedback {
     use gpui::actions;
 
