@@ -5,9 +5,9 @@ use crate::{
     ClearAllBreakpoints, Continue, Detach, FocusBreakpointList, FocusConsole, FocusFrames,
     FocusLoadedSources, FocusModules, FocusTerminal, FocusVariables, Pause, Restart,
     ShowStackTrace, StepBack, StepInto, StepOut, StepOver, Stop, ToggleIgnoreBreakpoints,
-    persistence,
+    ToggleSessionPicker, ToggleThreadPicker, persistence,
 };
-use anyhow::{Result, anyhow};
+use anyhow::{Context as _, Result, anyhow};
 use command_palette_hooks::CommandPaletteFilter;
 use dap::StartDebuggingRequestArguments;
 use dap::adapters::DebugAdapterName;
@@ -31,7 +31,7 @@ use settings::Settings;
 use std::any::TypeId;
 use std::sync::Arc;
 use task::{DebugScenario, TaskContext};
-use ui::{ContextMenu, Divider, Tooltip, prelude::*};
+use ui::{ContextMenu, Divider, PopoverMenuHandle, Tooltip, prelude::*};
 use workspace::SplitDirection;
 use workspace::{
     Pane, Workspace,
@@ -65,27 +65,54 @@ pub struct DebugPanel {
     workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     context_menu: Option<(Entity<ContextMenu>, Point<Pixels>, Subscription)>,
+    pub(crate) thread_picker_menu_handle: PopoverMenuHandle<ContextMenu>,
+    pub(crate) session_picker_menu_handle: PopoverMenuHandle<ContextMenu>,
     fs: Arc<dyn Fs>,
 }
 
 impl DebugPanel {
-    pub fn new(workspace: &Workspace, cx: &mut Context<Workspace>) -> Entity<Self> {
+    pub fn new(
+        workspace: &Workspace,
+        _window: &mut Window,
+        cx: &mut Context<Workspace>,
+    ) -> Entity<Self> {
         cx.new(|cx| {
             let project = workspace.project().clone();
+            let focus_handle = cx.focus_handle();
+            let thread_picker_menu_handle = PopoverMenuHandle::default();
+            let session_picker_menu_handle = PopoverMenuHandle::default();
 
-            let debug_panel = Self {
+            Self {
                 size: px(300.),
                 sessions: vec![],
                 active_session: None,
-                focus_handle: cx.focus_handle(),
+                focus_handle,
                 project,
                 workspace: workspace.weak_handle(),
                 context_menu: None,
                 fs: workspace.app_state().fs.clone(),
-            };
-
-            debug_panel
+                thread_picker_menu_handle,
+                session_picker_menu_handle,
+            }
         })
+    }
+
+    pub(crate) fn focus_active_item(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = self.active_session.clone() else {
+            return;
+        };
+        let Some(active_pane) = session
+            .read(cx)
+            .running_state()
+            .read(cx)
+            .active_pane()
+            .cloned()
+        else {
+            return;
+        };
+        active_pane.update(cx, |pane, cx| {
+            pane.focus_active_item(window, cx);
+        });
     }
 
     pub(crate) fn sessions(&self) -> Vec<Entity<DebugSession>> {
@@ -182,8 +209,8 @@ impl DebugPanel {
         cx: &mut AsyncWindowContext,
     ) -> Task<Result<Entity<Self>>> {
         cx.spawn(async move |cx| {
-            workspace.update(cx, |workspace, cx| {
-                let debug_panel = DebugPanel::new(workspace, cx);
+            workspace.update_in(cx, |workspace, window, cx| {
+                let debug_panel = DebugPanel::new(workspace, window, cx);
 
                 workspace.register_action(|workspace, _: &ClearAllBreakpoints, _, cx| {
                     workspace.project().read(cx).breakpoint_store().update(
@@ -272,6 +299,7 @@ impl DebugPanel {
 
         cx.spawn(async move |_, cx| {
             if let Err(error) = task.await {
+                log::error!("{error}");
                 session
                     .update(cx, |session, cx| {
                         session
@@ -724,55 +752,6 @@ impl DebugPanel {
                                     )
                                     .child(Divider::vertical())
                                     .child(
-                                        IconButton::new(
-                                            "debug-enable-breakpoint",
-                                            IconName::DebugDisabledBreakpoint,
-                                        )
-                                        .icon_size(IconSize::XSmall)
-                                        .shape(ui::IconButtonShape::Square)
-                                        .disabled(thread_status != ThreadStatus::Stopped),
-                                    )
-                                    .child(
-                                        IconButton::new(
-                                            "debug-disable-breakpoint",
-                                            IconName::CircleOff,
-                                        )
-                                        .icon_size(IconSize::XSmall)
-                                        .shape(ui::IconButtonShape::Square)
-                                        .disabled(thread_status != ThreadStatus::Stopped),
-                                    )
-                                    .child(
-                                        IconButton::new(
-                                            "debug-disable-all-breakpoints",
-                                            IconName::BugOff,
-                                        )
-                                        .icon_size(IconSize::XSmall)
-                                        .shape(ui::IconButtonShape::Square)
-                                        .disabled(
-                                            thread_status == ThreadStatus::Exited
-                                                || thread_status == ThreadStatus::Ended,
-                                        )
-                                        .on_click(window.listener_for(
-                                            &running_state,
-                                            |this, _, _window, cx| {
-                                                this.toggle_ignore_breakpoints(cx);
-                                            },
-                                        ))
-                                        .tooltip({
-                                            let focus_handle = focus_handle.clone();
-                                            move |window, cx| {
-                                                Tooltip::for_action_in(
-                                                    "Disable all breakpoints",
-                                                    &ToggleIgnoreBreakpoints,
-                                                    &focus_handle,
-                                                    window,
-                                                    cx,
-                                                )
-                                            }
-                                        }),
-                                    )
-                                    .child(Divider::vertical())
-                                    .child(
                                         IconButton::new("debug-restart", IconName::DebugRestart)
                                             .icon_size(IconSize::XSmall)
                                             .on_click(window.listener_for(
@@ -998,21 +977,25 @@ impl DebugPanel {
                     }
 
                     workspace.update(cx, |workspace, cx| {
-                        if let Some(project_path) = workspace
+                        workspace
                             .project()
                             .read(cx)
                             .project_path_for_absolute_path(&path, cx)
-                        {
-                            Ok(project_path)
-                        } else {
-                            Err(anyhow!(
-                                "Couldn't get project path for .zed/debug.json in active worktree"
-                            ))
-                        }
+                            .context(
+                                "Couldn't get project path for .zed/debug.json in active worktree",
+                            )
                     })?
                 })
             })
             .unwrap_or_else(|err| Task::ready(Err(err)))
+    }
+
+    pub(crate) fn toggle_thread_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.thread_picker_menu_handle.toggle(window, cx);
+    }
+
+    pub(crate) fn toggle_session_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.session_picker_menu_handle.toggle(window, cx);
     }
 }
 
@@ -1226,6 +1209,24 @@ impl Render for DebugPanel {
                 move |_: &FocusTerminal, window, cx| {
                     this.update(cx, |this, cx| {
                         this.activate_item(DebuggerPaneItem::Terminal, window, cx);
+                    })
+                    .ok();
+                }
+            })
+            .on_action({
+                let this = this.clone();
+                move |_: &ToggleThreadPicker, window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.toggle_thread_picker(window, cx);
+                    })
+                    .ok();
+                }
+            })
+            .on_action({
+                let this = this.clone();
+                move |_: &ToggleSessionPicker, window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.toggle_session_picker(window, cx);
                     })
                     .ok();
                 }
