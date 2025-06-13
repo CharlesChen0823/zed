@@ -39,7 +39,7 @@ use proto::Plan;
 use settings::Settings;
 use std::time::Duration;
 use theme::ThemeSettings;
-use ui::{Disclosure, KeyBinding, PopoverMenuHandle, Tooltip, prelude::*};
+use ui::{Callout, Disclosure, KeyBinding, PopoverMenuHandle, Tooltip, prelude::*};
 use util::{ResultExt as _, maybe};
 use workspace::{CollaboratorId, Workspace};
 use zed_llm_client::CompletionIntent;
@@ -428,10 +428,6 @@ impl MessageEditor {
     }
 
     fn handle_review_click(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.thread.read(cx).has_pending_edit_tool_uses() {
-            return;
-        }
-
         self.edits_expanded = true;
         AgentDiffPane::deploy(self.thread.clone(), self.workspace.clone(), window, cx).log_err();
         cx.notify();
@@ -641,42 +637,36 @@ impl MessageEditor {
             .border_color(cx.theme().colors().border)
             .child(
                 h_flex()
-                    .items_start()
                     .justify_between()
                     .child(self.context_strip.clone())
-                    .child(
-                        h_flex()
-                            .gap_1()
-                            .when(focus_handle.is_focused(window), |this| {
-                                this.child(
-                                    IconButton::new("toggle-height", expand_icon)
-                                        .icon_size(IconSize::XSmall)
-                                        .icon_color(Color::Muted)
-                                        .tooltip({
-                                            let focus_handle = focus_handle.clone();
-                                            move |window, cx| {
-                                                let expand_label = if is_editor_expanded {
-                                                    "Minimize Message Editor".to_string()
-                                                } else {
-                                                    "Expand Message Editor".to_string()
-                                                };
+                    .when(focus_handle.is_focused(window), |this| {
+                        this.child(
+                            IconButton::new("toggle-height", expand_icon)
+                                .icon_size(IconSize::XSmall)
+                                .icon_color(Color::Muted)
+                                .tooltip({
+                                    let focus_handle = focus_handle.clone();
+                                    move |window, cx| {
+                                        let expand_label = if is_editor_expanded {
+                                            "Minimize Message Editor".to_string()
+                                        } else {
+                                            "Expand Message Editor".to_string()
+                                        };
 
-                                                Tooltip::for_action_in(
-                                                    expand_label,
-                                                    &ExpandMessageEditor,
-                                                    &focus_handle,
-                                                    window,
-                                                    cx,
-                                                )
-                                            }
-                                        })
-                                        .on_click(cx.listener(|_, _, window, cx| {
-                                            window
-                                                .dispatch_action(Box::new(ExpandMessageEditor), cx);
-                                        })),
-                                )
-                            }),
-                    ),
+                                        Tooltip::for_action_in(
+                                            expand_label,
+                                            &ExpandMessageEditor,
+                                            &focus_handle,
+                                            window,
+                                            cx,
+                                        )
+                                    }
+                                })
+                                .on_click(cx.listener(|_, _, window, cx| {
+                                    window.dispatch_action(Box::new(ExpandMessageEditor), cx);
+                                })),
+                        )
+                    }),
             )
             .child(
                 v_flex()
@@ -722,6 +712,7 @@ impl MessageEditor {
                     .child(
                         h_flex()
                             .flex_none()
+                            .flex_wrap()
                             .justify_between()
                             .child(
                                 h_flex()
@@ -731,6 +722,7 @@ impl MessageEditor {
                             .child(
                                 h_flex()
                                     .gap_1()
+                                    .flex_wrap()
                                     .when(!incompatible_tools.is_empty(), |this| {
                                         this.child(
                                             IconButton::new(
@@ -1183,6 +1175,7 @@ impl MessageEditor {
             .map_or(false, |model| {
                 model.provider.id().0 == ZED_CLOUD_PROVIDER_ID
             });
+
         if !is_using_zed_provider {
             return None;
         }
@@ -1237,14 +1230,6 @@ impl MessageEditor {
         token_usage_ratio: TokenUsageRatio,
         cx: &mut Context<Self>,
     ) -> Option<Div> {
-        let title = if token_usage_ratio == TokenUsageRatio::Exceeded {
-            "Thread reached the token limit"
-        } else {
-            "Thread reaching the token limit soon"
-        };
-
-        let message = "Start a new thread from a summary to continue the conversation.";
-
         let icon = if token_usage_ratio == TokenUsageRatio::Exceeded {
             Icon::new(IconName::X)
                 .color(Color::Error)
@@ -1255,19 +1240,36 @@ impl MessageEditor {
                 .size(IconSize::XSmall)
         };
 
+        let title = if token_usage_ratio == TokenUsageRatio::Exceeded {
+            "Thread reached the token limit"
+        } else {
+            "Thread reaching the token limit soon"
+        };
+
         Some(
             div()
-                .child(ui::Callout::multi_line(
-                    title,
-                    message,
-                    icon,
-                    "Start New Thread",
-                    Box::new(cx.listener(|this, _, window, cx| {
-                        let from_thread_id = Some(this.thread.read(cx).id().clone());
-                        window.dispatch_action(Box::new(NewThread { from_thread_id }), cx);
-                    })),
-                ))
-                .line_height(line_height),
+                .border_t_1()
+                .border_color(cx.theme().colors().border)
+                .child(
+                    Callout::new()
+                        .line_height(line_height)
+                        .icon(icon)
+                        .title(title)
+                        .description(
+                            "Start a new thread from a summary to continue the conversation.",
+                        )
+                        .primary_action(
+                            Button::new("start-new-thread", "Start New Thread")
+                                .label_size(LabelSize::Small)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    let from_thread_id = Some(this.thread.read(cx).id().clone());
+                                    window.dispatch_action(
+                                        Box::new(NewThread { from_thread_id }),
+                                        cx,
+                                    );
+                                })),
+                        ),
+                ),
         )
     }
 
