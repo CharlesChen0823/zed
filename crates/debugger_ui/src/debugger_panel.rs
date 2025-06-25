@@ -696,30 +696,6 @@ impl DebugPanel {
                                             }),
                                     )
                                     .child(
-                                        IconButton::new("debug-step-out", IconName::ArrowUpRight)
-                                            .icon_size(IconSize::XSmall)
-                                            .shape(ui::IconButtonShape::Square)
-                                            .on_click(window.listener_for(
-                                                &running_state,
-                                                |this, _, _window, cx| {
-                                                    this.step_out(cx);
-                                                },
-                                            ))
-                                            .disabled(thread_status != ThreadStatus::Stopped)
-                                            .tooltip({
-                                                let focus_handle = focus_handle.clone();
-                                                move |window, cx| {
-                                                    Tooltip::for_action_in(
-                                                        "Step out",
-                                                        &StepOut,
-                                                        &focus_handle,
-                                                        window,
-                                                        cx,
-                                                    )
-                                                }
-                                            }),
-                                    )
-                                    .child(
                                         IconButton::new(
                                             "debug-step-into",
                                             IconName::ArrowDownRight,
@@ -745,6 +721,30 @@ impl DebugPanel {
                                                 )
                                             }
                                         }),
+                                    )
+                                    .child(
+                                        IconButton::new("debug-step-out", IconName::ArrowUpRight)
+                                            .icon_size(IconSize::XSmall)
+                                            .shape(ui::IconButtonShape::Square)
+                                            .on_click(window.listener_for(
+                                                &running_state,
+                                                |this, _, _window, cx| {
+                                                    this.step_out(cx);
+                                                },
+                                            ))
+                                            .disabled(thread_status != ThreadStatus::Stopped)
+                                            .tooltip({
+                                                let focus_handle = focus_handle.clone();
+                                                move |window, cx| {
+                                                    Tooltip::for_action_in(
+                                                        "Step out",
+                                                        &StepOut,
+                                                        &focus_handle,
+                                                        window,
+                                                        cx,
+                                                    )
+                                                }
+                                            }),
                                     )
                                     .child(Divider::vertical())
                                     .child(
@@ -1472,8 +1472,10 @@ impl Render for DebugPanel {
                                 h_flex().size_full()
                                     .items_start()
 
-                                    .child(v_flex().items_start().min_w_1_3().h_full().p_1()
-                                        .child(h_flex().px_1().child(Label::new("Breakpoints").size(LabelSize::Small)))
+                                    .child(v_flex().group("base-breakpoint-list").items_start().min_w_1_3().h_full().p_1()
+                                        .child(h_flex().pl_1().w_full().justify_between()
+                                            .child(Label::new("Breakpoints").size(LabelSize::Small))
+                                            .child(h_flex().visible_on_hover("base-breakpoint-list").child(self.breakpoint_list.read(cx).render_control_strip())))
                                         .child(Divider::horizontal())
                                         .child(self.breakpoint_list.clone()))
                                     .child(Divider::vertical())

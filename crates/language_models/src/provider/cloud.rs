@@ -1,6 +1,6 @@
 use anthropic::{AnthropicModelMode, parse_prompt_too_long};
 use anyhow::{Context as _, Result, anyhow};
-use client::{Client, UserStore, zed_urls};
+use client::{Client, ModelRequestUsage, UserStore, zed_urls};
 use futures::{
     AsyncBufReadExt, FutureExt, Stream, StreamExt, future::BoxFuture, stream::BoxStream,
 };
@@ -14,7 +14,7 @@ use language_model::{
     LanguageModelCompletionError, LanguageModelId, LanguageModelKnownError, LanguageModelName,
     LanguageModelProviderId, LanguageModelProviderName, LanguageModelProviderState,
     LanguageModelProviderTosView, LanguageModelRequest, LanguageModelToolChoice,
-    LanguageModelToolSchemaFormat, ModelRequestLimitReachedError, RateLimiter, RequestUsage,
+    LanguageModelToolSchemaFormat, ModelRequestLimitReachedError, RateLimiter,
     ZED_CLOUD_PROVIDER_ID,
 };
 use language_model::{
@@ -530,7 +530,7 @@ pub struct CloudLanguageModel {
 
 struct PerformLlmCompletionResponse {
     response: Response<AsyncBody>,
-    usage: Option<RequestUsage>,
+    usage: Option<ModelRequestUsage>,
     tool_use_limit_reached: bool,
     includes_status_messages: bool,
 }
@@ -581,7 +581,7 @@ impl CloudLanguageModel {
                 let usage = if includes_status_messages {
                     None
                 } else {
-                    RequestUsage::from_headers(response.headers()).ok()
+                    ModelRequestUsage::from_headers(response.headers()).ok()
                 };
 
                 return Ok(PerformLlmCompletionResponse {
@@ -888,7 +888,12 @@ impl LanguageModel for CloudLanguageModel {
                     Ok(model) => model,
                     Err(err) => return async move { Err(anyhow!(err).into()) }.boxed(),
                 };
-                let request = into_open_ai(request, &model, None);
+                let request = into_open_ai(
+                    request,
+                    model.id(),
+                    model.supports_parallel_tool_calls(),
+                    None,
+                );
                 let llm_api_token = self.llm_api_token.clone();
                 let future = self.request_limiter.stream(async move {
                     let PerformLlmCompletionResponse {
@@ -1002,7 +1007,7 @@ where
 }
 
 fn usage_updated_event<T>(
-    usage: Option<RequestUsage>,
+    usage: Option<ModelRequestUsage>,
 ) -> impl Stream<Item = Result<CloudCompletionEvent<T>>> {
     futures::stream::iter(usage.map(|usage| {
         Ok(CloudCompletionEvent::Status(
