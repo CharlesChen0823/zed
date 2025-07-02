@@ -1,4 +1,4 @@
-use editor::{DisplayPoint, Editor, movement, scroll::Autoscroll};
+use editor::{DisplayPoint, Editor, movement};
 use gpui::{Action, actions};
 use gpui::{Context, Window};
 use language::{CharClassifier, CharKind};
@@ -47,7 +47,7 @@ impl Vim {
         mut is_boundary: impl FnMut(char, char, &CharClassifier) -> bool,
     ) {
         self.update_editor(window, cx, |_, editor, window, cx| {
-            editor.change_selections(Some(Autoscroll::fit()), window, cx, |s| {
+            editor.change_selections(Default::default(), window, cx, |s| {
                 s.move_with(|map, selection| {
                     let times = times.unwrap_or(1);
                     let new_goal = SelectionGoal::None;
@@ -100,7 +100,7 @@ impl Vim {
         mut is_boundary: impl FnMut(char, char, &CharClassifier) -> bool,
     ) {
         self.update_editor(window, cx, |_, editor, window, cx| {
-            editor.change_selections(Some(Autoscroll::fit()), window, cx, |s| {
+            editor.change_selections(Default::default(), window, cx, |s| {
                 s.move_with(|map, selection| {
                     let times = times.unwrap_or(1);
                     let new_goal = SelectionGoal::None;
@@ -161,7 +161,7 @@ impl Vim {
     ) {
         self.update_editor(window, cx, |_, editor, window, cx| {
             let text_layout_details = editor.text_layout_details(window);
-            editor.change_selections(Some(Autoscroll::fit()), window, cx, |s| {
+            editor.change_selections(Default::default(), window, cx, |s| {
                 s.move_with(|map, selection| {
                     let goal = selection.goal;
                     let cursor = if selection.is_empty() || selection.reversed {
@@ -239,7 +239,7 @@ impl Vim {
             Motion::FindForward { .. } => {
                 self.update_editor(window, cx, |_, editor, window, cx| {
                     let text_layout_details = editor.text_layout_details(window);
-                    editor.change_selections(Some(Autoscroll::fit()), window, cx, |s| {
+                    editor.change_selections(Default::default(), window, cx, |s| {
                         s.move_with(|map, selection| {
                             let goal = selection.goal;
                             let cursor = if selection.is_empty() || selection.reversed {
@@ -266,7 +266,7 @@ impl Vim {
             Motion::FindBackward { .. } => {
                 self.update_editor(window, cx, |_, editor, window, cx| {
                     let text_layout_details = editor.text_layout_details(window);
-                    editor.change_selections(Some(Autoscroll::fit()), window, cx, |s| {
+                    editor.change_selections(Default::default(), window, cx, |s| {
                         s.move_with(|map, selection| {
                             let goal = selection.goal;
                             let cursor = if selection.is_empty() || selection.reversed {
@@ -302,14 +302,14 @@ mod test {
     use crate::{state::Mode, test::VimTestContext};
 
     #[gpui::test]
-    async fn test_next_word_start(cx: &mut gpui::TestAppContext) {
+    async fn test_word_motions(cx: &mut gpui::TestAppContext) {
         let mut cx = VimTestContext::new(cx, true).await;
         // «
         // ˇ
         // »
         cx.set_state(
             indoc! {"
-            The quˇick brown
+            Th«e quiˇ»ck brown
             fox jumps over
             the lazy dog."},
             Mode::HelixNormal,
@@ -334,6 +334,32 @@ mod test {
             the lazy dog."},
             Mode::HelixNormal,
         );
+
+        cx.simulate_keystrokes("2 b");
+
+        cx.assert_state(
+            indoc! {"
+            The «ˇquick »brown
+            fox jumps over
+            the lazy dog."},
+            Mode::HelixNormal,
+        );
+
+        cx.simulate_keystrokes("down e up");
+
+        cx.assert_state(
+            indoc! {"
+            The quicˇk brown
+            fox jumps over
+            the lazy dog."},
+            Mode::HelixNormal,
+        );
+
+        cx.set_state("aa\n  «ˇbb»", Mode::HelixNormal);
+
+        cx.simulate_keystroke("b");
+
+        cx.assert_state("aa\n«ˇ  »bb", Mode::HelixNormal);
     }
 
     // #[gpui::test]
@@ -447,5 +473,22 @@ mod test {
                 the laz»y dog."},
             Mode::HelixNormal,
         );
+    }
+
+    #[gpui::test]
+    async fn test_newline_char(cx: &mut gpui::TestAppContext) {
+        let mut cx = VimTestContext::new(cx, true).await;
+
+        cx.set_state("aa«\nˇ»bb cc", Mode::HelixNormal);
+
+        cx.simulate_keystroke("w");
+
+        cx.assert_state("aa\n«bb ˇ»cc", Mode::HelixNormal);
+
+        cx.set_state("aa«\nˇ»", Mode::HelixNormal);
+
+        cx.simulate_keystroke("b");
+
+        cx.assert_state("«ˇaa»\n", Mode::HelixNormal);
     }
 }
