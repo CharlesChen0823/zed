@@ -56,7 +56,7 @@ use aho_corasick::AhoCorasick;
 use anyhow::{Context as _, Result, anyhow};
 use blink_manager::BlinkManager;
 use buffer_diff::DiffHunkStatus;
-use client::{Collaborator, ParticipantIndex};
+use client::{Collaborator, DisableAiSettings, ParticipantIndex};
 use clock::{AGENT_REPLICA_ID, ReplicaId};
 use collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use convert_case::{Case, Casing};
@@ -65,7 +65,7 @@ use display_map::*;
 pub use display_map::{ChunkRenderer, ChunkRendererContext, DisplayPoint, FoldPlaceholder};
 pub use editor_settings::{
     CurrentLineHighlight, DocumentColorsRenderMode, EditorSettings, HideMouseMode,
-    ScrollBeyondLastLine, ScrollbarAxes, SearchSettings, ShowScrollbar,
+    ScrollBeyondLastLine, ScrollbarAxes, SearchSettings, ShowMinimap, ShowScrollbar,
 };
 use editor_settings::{GoToDefinitionFallback, Minimap as MinimapSettings};
 pub use editor_settings_controls::*;
@@ -1774,7 +1774,7 @@ impl Editor {
     ) -> Self {
         debug_assert!(
             display_map.is_none() || mode.is_minimap(),
-            "Providing a display map for a new editor is only intended for the minimap and might have unindended side effects otherwise!"
+            "Providing a display map for a new editor is only intended for the minimap and might have unintended side effects otherwise!"
         );
 
         let full_mode = mode.is_full();
@@ -7048,7 +7048,7 @@ impl Editor {
     }
 
     pub fn update_edit_prediction_settings(&mut self, cx: &mut Context<Self>) {
-        if self.edit_prediction_provider.is_none() {
+        if self.edit_prediction_provider.is_none() || DisableAiSettings::get_global(cx).disable_ai {
             self.edit_prediction_settings = EditPredictionSettings::Disabled;
         } else {
             let selection = self.selections.newest_anchor();
@@ -8235,8 +8235,7 @@ impl Editor {
             return;
         };
 
-        // Try to find a closest, enclosing node using tree-sitter that has a
-        // task
+        // Try to find a closest, enclosing node using tree-sitter that has a task
         let Some((buffer, buffer_row, tasks)) = self
             .find_enclosing_node_task(cx)
             // Or find the task that's closest in row-distance.
@@ -21835,11 +21834,11 @@ impl CodeActionProvider for Entity<Project> {
         cx: &mut App,
     ) -> Task<Result<Vec<CodeAction>>> {
         self.update(cx, |project, cx| {
-            let code_lens = project.code_lens(buffer, range.clone(), cx);
+            let code_lens_actions = project.code_lens_actions(buffer, range.clone(), cx);
             let code_actions = project.code_actions(buffer, range, None, cx);
             cx.background_spawn(async move {
-                let (code_lens, code_actions) = join(code_lens, code_actions).await;
-                Ok(code_lens
+                let (code_lens_actions, code_actions) = join(code_lens_actions, code_actions).await;
+                Ok(code_lens_actions
                     .context("code lens fetch")?
                     .into_iter()
                     .chain(code_actions.context("code action fetch")?)
