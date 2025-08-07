@@ -1,8 +1,11 @@
 mod timestamp;
+pub mod websocket_protocol;
 
 use serde::{Deserialize, Serialize};
 
 pub use crate::timestamp::Timestamp;
+
+pub const ZED_SYSTEM_ID_HEADER_NAME: &str = "x-zed-system-id";
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct GetAuthenticatedUserResponse {
@@ -37,4 +40,17 @@ pub struct PlanInfo {
 pub struct SubscriptionPeriod {
     pub started_at: Timestamp,
     pub ended_at: Timestamp,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct AcceptTermsOfServiceResponse {
+    pub user: AuthenticatedUser,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct LlmToken(pub String);
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct CreateLlmTokenResponse {
+    pub token: LlmToken,
 }
