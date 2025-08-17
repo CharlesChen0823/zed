@@ -74,7 +74,7 @@ fn test_edit_events(cx: &mut TestAppContext) {
     let editor1 = cx.add_window({
         let events = events.clone();
         |window, cx| {
-            let entity = cx.entity().clone();
+            let entity = cx.entity();
             cx.subscribe_in(
                 &entity,
                 window,
@@ -95,7 +95,7 @@ fn test_edit_events(cx: &mut TestAppContext) {
         let events = events.clone();
         |window, cx| {
             cx.subscribe_in(
-                &cx.entity().clone(),
+                &cx.entity(),
                 window,
                 move |_, _, event: &EditorEvent, _, _| match event {
                     EditorEvent::Edited { .. } => events.borrow_mut().push(("editor2", "edited")),
@@ -6401,7 +6401,7 @@ async fn test_split_selection_into_lines(cx: &mut TestAppContext) {
     fn test(cx: &mut EditorTestContext, initial_state: &'static str, expected_state: &'static str) {
         cx.set_state(initial_state);
         cx.update_editor(|e, window, cx| {
-            e.split_selection_into_lines(&SplitSelectionIntoLines, window, cx)
+            e.split_selection_into_lines(&Default::default(), window, cx)
         });
         cx.assert_editor_state(expected_state);
     }
@@ -6489,7 +6489,7 @@ async fn test_split_selection_into_lines_interacting_with_creases(cx: &mut TestA
                 DisplayPoint::new(DisplayRow(4), 4)..DisplayPoint::new(DisplayRow(4), 4),
             ])
         });
-        editor.split_selection_into_lines(&SplitSelectionIntoLines, window, cx);
+        editor.split_selection_into_lines(&Default::default(), window, cx);
         assert_eq!(
             editor.display_text(cx),
             "aaaaa\nbbbbb\nccc⋯eeee\nfffff\nggggg\n⋯i"
@@ -6505,7 +6505,7 @@ async fn test_split_selection_into_lines_interacting_with_creases(cx: &mut TestA
                 DisplayPoint::new(DisplayRow(5), 0)..DisplayPoint::new(DisplayRow(0), 1)
             ])
         });
-        editor.split_selection_into_lines(&SplitSelectionIntoLines, window, cx);
+        editor.split_selection_into_lines(&Default::default(), window, cx);
         assert_eq!(
             editor.display_text(cx),
             "aaaaa\nbbbbb\nccccc\nddddd\neeeee\nfffff\nggggg\nhhhhh\niiiii"
@@ -15082,7 +15082,7 @@ async fn go_to_prev_overlapping_diagnostic(executor: BackgroundExecutor, cx: &mu
 
     let mut cx = EditorTestContext::new(cx).await;
     let lsp_store =
-        cx.update_editor(|editor, _, cx| editor.project.as_ref().unwrap().read(cx).lsp_store());
+        cx.update_editor(|editor, _, cx| editor.project().unwrap().read(cx).lsp_store());
 
     cx.set_state(indoc! {"
         ˇfn func(abc def: i32) -> u32 {
@@ -19634,13 +19634,8 @@ fn test_crease_insertion_and_rendering(cx: &mut TestAppContext) {
 
             editor.insert_creases(Some(crease), cx);
             let snapshot = editor.snapshot(window, cx);
-            let _div = snapshot.render_crease_toggle(
-                MultiBufferRow(1),
-                false,
-                cx.entity().clone(),
-                window,
-                cx,
-            );
+            let _div =
+                snapshot.render_crease_toggle(MultiBufferRow(1), false, cx.entity(), window, cx);
             snapshot
         })
         .unwrap();

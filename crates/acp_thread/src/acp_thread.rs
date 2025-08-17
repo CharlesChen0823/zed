@@ -32,13 +32,24 @@ use util::ResultExt;
 pub struct UserMessage {
     pub id: Option<UserMessageId>,
     pub content: ContentBlock,
-    pub checkpoint: Option<GitStoreCheckpoint>,
+    pub chunks: Vec<acp::ContentBlock>,
+    pub checkpoint: Option<Checkpoint>,
+}
+
+#[derive(Debug)]
+pub struct Checkpoint {
+    git_checkpoint: GitStoreCheckpoint,
+    pub show: bool,
 }
 
 impl UserMessage {
     fn to_markdown(&self, cx: &App) -> String {
         let mut markdown = String::new();
-        if let Some(_) = self.checkpoint {
+        if self
+            .checkpoint
+            .as_ref()
+            .map_or(false, |checkpoint| checkpoint.show)
+        {
             writeln!(markdown, "## User (checkpoint)").unwrap();
         } else {
             writeln!(markdown, "## User").unwrap();
@@ -98,11 +109,19 @@ pub enum AgentThreadEntry {
 }
 
 impl AgentThreadEntry {
-    fn to_markdown(&self, cx: &App) -> String {
+    pub fn to_markdown(&self, cx: &App) -> String {
         match self {
             Self::UserMessage(message) => message.to_markdown(cx),
             Self::AssistantMessage(message) => message.to_markdown(cx),
             Self::ToolCall(tool_call) => tool_call.to_markdown(cx),
+        }
+    }
+
+    pub fn user_message(&self) -> Option<&UserMessage> {
+        if let AgentThreadEntry::UserMessage(message) = self {
+            Some(message)
+        } else {
+            None
         }
     }
 
@@ -442,9 +461,8 @@ impl ContentBlock {
                     }),
                 ..
             }) => Self::resource_link_md(&uri),
-            acp::ContentBlock::Image(_)
-            | acp::ContentBlock::Audio(_)
-            | acp::ContentBlock::Resource(_) => String::new(),
+            acp::ContentBlock::Image(image) => Self::image_md(&image),
+            acp::ContentBlock::Audio(_) | acp::ContentBlock::Resource(_) => String::new(),
         }
     }
 
@@ -454,6 +472,10 @@ impl ContentBlock {
         } else {
             uri.to_string()
         }
+    }
+
+    fn image_md(_image: &acp::ImageContent) -> String {
+        "`Image`".into()
     }
 
     fn to_markdown<'a>(&'a self, cx: &'a App) -> &'a str {
@@ -770,7 +792,7 @@ impl AcpThread {
         &mut self,
         update: acp::SessionUpdate,
         cx: &mut Context<Self>,
-    ) -> Result<()> {
+    ) -> Result<(), acp::Error> {
         match update {
             acp::SessionUpdate::UserMessageChunk { content } => {
                 self.push_user_content_block(None, content, cx);
@@ -782,7 +804,7 @@ impl AcpThread {
                 self.push_assistant_content_block(content, true, cx);
             }
             acp::SessionUpdate::ToolCall(tool_call) => {
-                self.upsert_tool_call(tool_call, cx);
+                self.upsert_tool_call(tool_call, cx)?;
             }
             acp::SessionUpdate::ToolCallUpdate(tool_call_update) => {
                 self.update_tool_call(tool_call_update, cx)?;
@@ -804,18 +826,25 @@ impl AcpThread {
         let entries_len = self.entries.len();
 
         if let Some(last_entry) = self.entries.last_mut()
-            && let AgentThreadEntry::UserMessage(UserMessage { id, content, .. }) = last_entry
+            && let AgentThreadEntry::UserMessage(UserMessage {
+                id,
+                content,
+                chunks,
+                ..
+            }) = last_entry
         {
             *id = message_id.or(id.take());
-            content.append(chunk, &language_registry, cx);
+            content.append(chunk.clone(), &language_registry, cx);
+            chunks.push(chunk);
             let idx = entries_len - 1;
             cx.emit(AcpThreadEvent::EntryUpdated(idx));
         } else {
-            let content = ContentBlock::new(chunk, &language_registry, cx);
+            let content = ContentBlock::new(chunk.clone(), &language_registry, cx);
             self.push_entry(
                 AgentThreadEntry::UserMessage(UserMessage {
                     id: message_id,
                     content,
+                    chunks: vec![chunk],
                     checkpoint: None,
                 }),
                 cx,
@@ -911,32 +940,40 @@ impl AcpThread {
     }
 
     /// Updates a tool call if id matches an existing entry, otherwise inserts a new one.
-    pub fn upsert_tool_call(&mut self, tool_call: acp::ToolCall, cx: &mut Context<Self>) {
+    pub fn upsert_tool_call(
+        &mut self,
+        tool_call: acp::ToolCall,
+        cx: &mut Context<Self>,
+    ) -> Result<(), acp::Error> {
         let status = ToolCallStatus::Allowed {
             status: tool_call.status,
         };
-        self.upsert_tool_call_inner(tool_call, status, cx)
+        self.upsert_tool_call_inner(tool_call.into(), status, cx)
     }
 
+    /// Fails if id does not match an existing entry.
     pub fn upsert_tool_call_inner(
         &mut self,
-        tool_call: acp::ToolCall,
+        tool_call_update: acp::ToolCallUpdate,
         status: ToolCallStatus,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Result<(), acp::Error> {
         let language_registry = self.project.read(cx).languages().clone();
-        let call = ToolCall::from_acp(tool_call, status, language_registry, cx);
-        let id = call.id.clone();
+        let id = tool_call_update.id.clone();
 
-        if let Some((ix, current_call)) = self.tool_call_mut(&call.id) {
-            *current_call = call;
+        if let Some((ix, current_call)) = self.tool_call_mut(&id) {
+            current_call.update_fields(tool_call_update.fields, language_registry, cx);
+            current_call.status = status;
 
             cx.emit(AcpThreadEvent::EntryUpdated(ix));
         } else {
+            let call =
+                ToolCall::from_acp(tool_call_update.try_into()?, status, language_registry, cx);
             self.push_entry(AgentThreadEntry::ToolCall(call), cx);
         };
 
         self.resolve_locations(id, cx);
+        Ok(())
     }
 
     fn tool_call_mut(&mut self, id: &acp::ToolCallId) -> Option<(usize, &mut ToolCall)> {
@@ -1005,10 +1042,10 @@ impl AcpThread {
 
     pub fn request_tool_call_authorization(
         &mut self,
-        tool_call: acp::ToolCall,
+        tool_call: acp::ToolCallUpdate,
         options: Vec<acp::PermissionOption>,
         cx: &mut Context<Self>,
-    ) -> oneshot::Receiver<acp::PermissionOptionId> {
+    ) -> Result<oneshot::Receiver<acp::PermissionOptionId>, acp::Error> {
         let (tx, rx) = oneshot::channel();
 
         let status = ToolCallStatus::WaitingForConfirmation {
@@ -1016,9 +1053,9 @@ impl AcpThread {
             respond_tx: tx,
         };
 
-        self.upsert_tool_call_inner(tool_call, status, cx);
+        self.upsert_tool_call_inner(tool_call, status, cx)?;
         cx.emit(AcpThreadEvent::ToolAuthorizationRequired);
-        rx
+        Ok(rx)
     }
 
     pub fn authorize_tool_call(
@@ -1134,9 +1171,12 @@ impl AcpThread {
             self.project.read(cx).languages().clone(),
             cx,
         );
+        let request = acp::PromptRequest {
+            prompt: message.clone(),
+            session_id: self.session_id.clone(),
+        };
         let git_store = self.project.read(cx).git_store().clone();
 
-        let old_checkpoint = git_store.update(cx, |git, cx| git.checkpoint(cx));
         let message_id = if self
             .connection
             .session_editor(&self.session_id, cx)
@@ -1150,67 +1190,63 @@ impl AcpThread {
             AgentThreadEntry::UserMessage(UserMessage {
                 id: message_id.clone(),
                 content: block,
+                chunks: message,
                 checkpoint: None,
             }),
             cx,
         );
+
+        self.run_turn(cx, async move |this, cx| {
+            let old_checkpoint = git_store
+                .update(cx, |git, cx| git.checkpoint(cx))?
+                .await
+                .context("failed to get old checkpoint")
+                .log_err();
+            this.update(cx, |this, cx| {
+                if let Some((_ix, message)) = this.last_user_message() {
+                    message.checkpoint = old_checkpoint.map(|git_checkpoint| Checkpoint {
+                        git_checkpoint,
+                        show: false,
+                    });
+                }
+                this.connection.prompt(message_id, request, cx)
+            })?
+            .await
+        })
+    }
+
+    pub fn resume(&mut self, cx: &mut Context<Self>) -> BoxFuture<'static, Result<()>> {
+        self.run_turn(cx, async move |this, cx| {
+            this.update(cx, |this, cx| {
+                this.connection
+                    .resume(&this.session_id, cx)
+                    .map(|resume| resume.run(cx))
+            })?
+            .context("resuming a session is not supported")?
+            .await
+        })
+    }
+
+    fn run_turn(
+        &mut self,
+        cx: &mut Context<Self>,
+        f: impl 'static + AsyncFnOnce(WeakEntity<Self>, &mut AsyncApp) -> Result<acp::PromptResponse>,
+    ) -> BoxFuture<'static, Result<()>> {
         self.clear_completed_plan_entries(cx);
 
-        let (old_checkpoint_tx, old_checkpoint_rx) = oneshot::channel();
         let (tx, rx) = oneshot::channel();
         let cancel_task = self.cancel(cx);
-        let request = acp::PromptRequest {
-            prompt: message,
-            session_id: self.session_id.clone(),
-        };
 
-        self.send_task = Some(cx.spawn({
-            let message_id = message_id.clone();
-            async move |this, cx| {
-                cancel_task.await;
-
-                old_checkpoint_tx.send(old_checkpoint.await).ok();
-                if let Ok(result) = this.update(cx, |this, cx| {
-                    this.connection.prompt(message_id, request, cx)
-                }) {
-                    tx.send(result.await).log_err();
-                }
-            }
+        self.send_task = Some(cx.spawn(async move |this, cx| {
+            cancel_task.await;
+            tx.send(f(this, cx).await).ok();
         }));
 
         cx.spawn(async move |this, cx| {
-            let old_checkpoint = old_checkpoint_rx
-                .await
-                .map_err(|_| anyhow!("send canceled"))
-                .flatten()
-                .context("failed to get old checkpoint")
-                .log_err();
-
             let response = rx.await;
 
-            if let Some((old_checkpoint, message_id)) = old_checkpoint.zip(message_id) {
-                let new_checkpoint = git_store
-                    .update(cx, |git, cx| git.checkpoint(cx))?
-                    .await
-                    .context("failed to get new checkpoint")
-                    .log_err();
-                if let Some(new_checkpoint) = new_checkpoint {
-                    let equal = git_store
-                        .update(cx, |git, cx| {
-                            git.compare_checkpoints(old_checkpoint.clone(), new_checkpoint, cx)
-                        })?
-                        .await
-                        .unwrap_or(true);
-                    if !equal {
-                        this.update(cx, |this, cx| {
-                            if let Some((ix, message)) = this.user_message_mut(&message_id) {
-                                message.checkpoint = Some(old_checkpoint);
-                                cx.emit(AcpThreadEvent::EntryUpdated(ix));
-                            }
-                        })?;
-                    }
-                }
-            }
+            this.update(cx, |this, cx| this.update_last_checkpoint(cx))?
+                .await?;
 
             this.update(cx, |this, cx| {
                 match response {
@@ -1282,7 +1318,10 @@ impl AcpThread {
             return Task::ready(Err(anyhow!("message not found")));
         };
 
-        let checkpoint = message.checkpoint.clone();
+        let checkpoint = message
+            .checkpoint
+            .as_ref()
+            .map(|c| c.git_checkpoint.clone());
 
         let git_store = self.project.read(cx).git_store().clone();
         cx.spawn(async move |this, cx| {
@@ -1302,6 +1341,59 @@ impl AcpThread {
                 }
             })
         })
+    }
+
+    fn update_last_checkpoint(&mut self, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let git_store = self.project.read(cx).git_store().clone();
+
+        let old_checkpoint = if let Some((_, message)) = self.last_user_message() {
+            if let Some(checkpoint) = message.checkpoint.as_ref() {
+                checkpoint.git_checkpoint.clone()
+            } else {
+                return Task::ready(Ok(()));
+            }
+        } else {
+            return Task::ready(Ok(()));
+        };
+
+        let new_checkpoint = git_store.update(cx, |git, cx| git.checkpoint(cx));
+        cx.spawn(async move |this, cx| {
+            let new_checkpoint = new_checkpoint
+                .await
+                .context("failed to get new checkpoint")
+                .log_err();
+            if let Some(new_checkpoint) = new_checkpoint {
+                let equal = git_store
+                    .update(cx, |git, cx| {
+                        git.compare_checkpoints(old_checkpoint.clone(), new_checkpoint, cx)
+                    })?
+                    .await
+                    .unwrap_or(true);
+                this.update(cx, |this, cx| {
+                    let (ix, message) = this.last_user_message().context("no user message")?;
+                    let checkpoint = message.checkpoint.as_mut().context("no checkpoint")?;
+                    checkpoint.show = !equal;
+                    cx.emit(AcpThreadEvent::EntryUpdated(ix));
+                    anyhow::Ok(())
+                })??;
+            }
+
+            Ok(())
+        })
+    }
+
+    fn last_user_message(&mut self) -> Option<(usize, &mut UserMessage)> {
+        self.entries
+            .iter_mut()
+            .enumerate()
+            .rev()
+            .find_map(|(ix, entry)| {
+                if let AgentThreadEntry::UserMessage(message) = entry {
+                    Some((ix, message))
+                } else {
+                    None
+                }
+            })
     }
 
     fn user_message(&self, id: &UserMessageId) -> Option<&UserMessage> {
@@ -1540,6 +1632,7 @@ mod tests {
     use settings::SettingsStore;
     use smol::stream::StreamExt as _;
     use std::{
+        any::Any,
         cell::RefCell,
         path::Path,
         rc::Rc,
@@ -1566,11 +1659,7 @@ mod tests {
         let project = Project::test(fs, [], cx).await;
         let connection = Rc::new(FakeAgentConnection::new());
         let thread = cx
-            .spawn(async move |mut cx| {
-                connection
-                    .new_thread(project, Path::new(path!("/test")), &mut cx)
-                    .await
-            })
+            .update(|cx| connection.new_thread(project, Path::new(path!("/test")), cx))
             .await
             .unwrap();
 
@@ -1690,11 +1779,7 @@ mod tests {
         ));
 
         let thread = cx
-            .spawn(async move |mut cx| {
-                connection
-                    .new_thread(project, Path::new(path!("/test")), &mut cx)
-                    .await
-            })
+            .update(|cx| connection.new_thread(project, Path::new(path!("/test")), cx))
             .await
             .unwrap();
 
@@ -1777,7 +1862,7 @@ mod tests {
             .unwrap();
 
         let thread = cx
-            .spawn(|mut cx| connection.new_thread(project, Path::new(path!("/tmp")), &mut cx))
+            .update(|cx| connection.new_thread(project, Path::new(path!("/tmp")), cx))
             .await
             .unwrap();
 
@@ -1840,11 +1925,7 @@ mod tests {
         }));
 
         let thread = cx
-            .spawn(async move |mut cx| {
-                connection
-                    .new_thread(project, Path::new(path!("/test")), &mut cx)
-                    .await
-            })
+            .update(|cx| connection.new_thread(project, Path::new(path!("/test")), cx))
             .await
             .unwrap();
 
@@ -1952,10 +2033,11 @@ mod tests {
             }
         }));
 
-        let thread = connection
-            .new_thread(project, Path::new(path!("/test")), &mut cx.to_async())
+        let thread = cx
+            .update(|cx| connection.new_thread(project, Path::new(path!("/test")), cx))
             .await
             .unwrap();
+
         cx.update(|cx| thread.update(cx, |thread, cx| thread.send(vec!["Hi".into()], cx)))
             .await
             .unwrap();
@@ -2012,8 +2094,8 @@ mod tests {
                 .boxed_local()
             }
         }));
-        let thread = connection
-            .new_thread(project, Path::new(path!("/test")), &mut cx.to_async())
+        let thread = cx
+            .update(|cx| connection.new_thread(project, Path::new(path!("/test")), cx))
             .await
             .unwrap();
 
@@ -2218,7 +2300,7 @@ mod tests {
             self: Rc<Self>,
             project: Entity<Project>,
             _cwd: &Path,
-            cx: &mut gpui::AsyncApp,
+            cx: &mut gpui::App,
         ) -> Task<gpui::Result<Entity<AcpThread>>> {
             let session_id = acp::SessionId(
                 rand::thread_rng()
@@ -2228,9 +2310,8 @@ mod tests {
                     .collect::<String>()
                     .into(),
             );
-            let thread = cx
-                .new(|cx| AcpThread::new("Test", self.clone(), project, session_id.clone(), cx))
-                .unwrap();
+            let thread =
+                cx.new(|cx| AcpThread::new("Test", self.clone(), project, session_id.clone(), cx));
             self.sessions.lock().insert(session_id, thread.downgrade());
             Task::ready(Ok(thread))
         }
@@ -2283,6 +2364,10 @@ mod tests {
             Some(Rc::new(FakeAgentSessionEditor {
                 _session_id: session_id.clone(),
             }))
+        }
+
+        fn into_any(self: Rc<Self>) -> Rc<dyn Any> {
+            self
         }
     }
 
