@@ -317,8 +317,8 @@ impl BreakpointStore {
                         .iter()
                         .filter_map(|breakpoint| {
                             breakpoint.bp.bp.to_proto(
-                                &path,
-                                &breakpoint.position(),
+                                path,
+                                breakpoint.position(),
                                 &breakpoint.session_state,
                             )
                         })
@@ -623,12 +623,11 @@ impl BreakpointStore {
                 file_breakpoints.breakpoints.iter().filter_map({
                     let range = range.clone();
                     move |bp| {
-                        if let Some(range) = &range {
-                            if bp.position().cmp(&range.start, buffer_snapshot).is_lt()
-                                || bp.position().cmp(&range.end, buffer_snapshot).is_gt()
-                            {
-                                return None;
-                            }
+                        if let Some(range) = &range
+                            && (bp.position().cmp(&range.start, buffer_snapshot).is_lt()
+                                || bp.position().cmp(&range.end, buffer_snapshot).is_gt())
+                        {
+                            return None;
                         }
                         let session_state = active_session_id
                             .and_then(|id| bp.session_state.get(&id))
@@ -753,7 +752,7 @@ impl BreakpointStore {
                         .iter()
                         .map(|breakpoint| {
                             let position = snapshot
-                                .summary_for_anchor::<PointUtf16>(&breakpoint.position())
+                                .summary_for_anchor::<PointUtf16>(breakpoint.position())
                                 .row;
                             let breakpoint = &breakpoint.bp;
                             SourceBreakpoint {

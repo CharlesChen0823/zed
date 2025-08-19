@@ -12,12 +12,12 @@ use futures::{
     channel::{mpsc, oneshot},
     stream::FuturesUnordered,
 };
-use gpui::{App, Context, Entity, SharedString, Task};
+use gpui::{App, AsyncApp, Context, Entity, SharedString, Task, WeakEntity};
 use language_model::{
-    LanguageModel, LanguageModelCompletionEvent, LanguageModelImage, LanguageModelProviderId,
-    LanguageModelRequest, LanguageModelRequestMessage, LanguageModelRequestTool,
-    LanguageModelToolResult, LanguageModelToolResultContent, LanguageModelToolSchemaFormat,
-    LanguageModelToolUse, LanguageModelToolUseId, Role, StopReason,
+    LanguageModel, LanguageModelCompletionError, LanguageModelCompletionEvent, LanguageModelImage,
+    LanguageModelProviderId, LanguageModelRequest, LanguageModelRequestMessage,
+    LanguageModelRequestTool, LanguageModelToolResult, LanguageModelToolResultContent,
+    LanguageModelToolSchemaFormat, LanguageModelToolUse, LanguageModelToolUseId, Role, StopReason,
 };
 use project::Project;
 use prompt_store::ProjectContext;
@@ -25,7 +25,12 @@ use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 use settings::{Settings, update_settings_file};
 use smol::stream::StreamExt;
-use std::{cell::RefCell, collections::BTreeMap, path::Path, rc::Rc, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use std::{fmt::Write, ops::Range};
 use util::{ResultExt, markdown::MarkdownCodeBlock};
 use uuid::Uuid;
@@ -69,6 +74,21 @@ impl std::fmt::Display for PromptId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+pub(crate) const MAX_RETRY_ATTEMPTS: u8 = 4;
+pub(crate) const BASE_RETRY_DELAY: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Clone)]
+enum RetryStrategy {
+    ExponentialBackoff {
+        initial_delay: Duration,
+        max_attempts: u8,
+    },
+    Fixed {
+        delay: Duration,
+        max_attempts: u8,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +166,7 @@ impl UserMessage {
             They are up-to-date and don't need to be re-read.\n\n";
 
         const OPEN_FILES_TAG: &str = "<files>";
+        const OPEN_DIRECTORIES_TAG: &str = "<directories>";
         const OPEN_SYMBOLS_TAG: &str = "<symbols>";
         const OPEN_THREADS_TAG: &str = "<threads>";
         const OPEN_FETCH_TAG: &str = "<fetched_urls>";
@@ -153,6 +174,7 @@ impl UserMessage {
             "<rules>\nThe user has specified the following rules that should be applied:\n";
 
         let mut file_context = OPEN_FILES_TAG.to_string();
+        let mut directory_context = OPEN_DIRECTORIES_TAG.to_string();
         let mut symbol_context = OPEN_SYMBOLS_TAG.to_string();
         let mut thread_context = OPEN_THREADS_TAG.to_string();
         let mut fetch_context = OPEN_FETCH_TAG.to_string();
@@ -168,16 +190,19 @@ impl UserMessage {
                 }
                 UserMessageContent::Mention { uri, content } => {
                     match uri {
-                        MentionUri::File { abs_path, .. } => {
+                        MentionUri::File { abs_path } => {
                             write!(
                                 &mut symbol_context,
                                 "\n{}",
                                 MarkdownCodeBlock {
-                                    tag: &codeblock_tag(&abs_path, None),
+                                    tag: &codeblock_tag(abs_path, None),
                                     text: &content.to_string(),
                                 }
                             )
                             .ok();
+                        }
+                        MentionUri::Directory { .. } => {
+                            write!(&mut directory_context, "\n{}\n", content).ok();
                         }
                         MentionUri::Symbol {
                             path, line_range, ..
@@ -189,8 +214,8 @@ impl UserMessage {
                                 &mut rules_context,
                                 "\n{}",
                                 MarkdownCodeBlock {
-                                    tag: &codeblock_tag(&path, Some(line_range)),
-                                    text: &content
+                                    tag: &codeblock_tag(path, Some(line_range)),
+                                    text: content
                                 }
                             )
                             .ok();
@@ -207,7 +232,7 @@ impl UserMessage {
                                 "\n{}",
                                 MarkdownCodeBlock {
                                     tag: "",
-                                    text: &content
+                                    text: content
                                 }
                             )
                             .ok();
@@ -231,6 +256,13 @@ impl UserMessage {
             message
                 .content
                 .push(language_model::MessageContent::Text(file_context));
+        }
+
+        if directory_context.len() > OPEN_DIRECTORIES_TAG.len() {
+            directory_context.push_str("</directories>\n");
+            message
+                .content
+                .push(language_model::MessageContent::Text(directory_context));
         }
 
         if symbol_context.len() > OPEN_SYMBOLS_TAG.len() {
@@ -443,6 +475,7 @@ pub enum AgentResponseEvent {
     ToolCall(acp::ToolCall),
     ToolCallUpdate(acp_thread::ToolCallUpdate),
     ToolCallAuthorization(ToolCallAuthorization),
+    Retry(acp_thread::RetryStatus),
     Stop(acp::StopReason),
 }
 
@@ -467,7 +500,7 @@ pub struct Thread {
     tool_use_limit_reached: bool,
     context_server_registry: Entity<ContextServerRegistry>,
     profile_id: AgentProfileId,
-    project_context: Rc<RefCell<ProjectContext>>,
+    project_context: Entity<ProjectContext>,
     templates: Arc<Templates>,
     model: Option<Arc<dyn LanguageModel>>,
     project: Entity<Project>,
@@ -477,7 +510,7 @@ pub struct Thread {
 impl Thread {
     pub fn new(
         project: Entity<Project>,
-        project_context: Rc<RefCell<ProjectContext>>,
+        project_context: Entity<ProjectContext>,
         context_server_registry: Entity<ContextServerRegistry>,
         action_log: Entity<ActionLog>,
         templates: Arc<Templates>,
@@ -489,7 +522,7 @@ impl Thread {
             id: ThreadId::new(),
             prompt_id: PromptId::new(),
             messages: Vec::new(),
-            completion_mode: CompletionMode::Normal,
+            completion_mode: AgentSettings::get_global(cx).preferred_completion_mode,
             running_turn: None,
             pending_message: None,
             tools: BTreeMap::default(),
@@ -506,6 +539,10 @@ impl Thread {
 
     pub fn project(&self) -> &Entity<Project> {
         &self.project
+    }
+
+    pub fn project_context(&self) -> &Entity<ProjectContext> {
+        &self.project_context
     }
 
     pub fn action_log(&self) -> &Entity<ActionLog> {
@@ -646,41 +683,18 @@ impl Thread {
                         })??;
 
                         log::info!("Calling model.stream_completion");
-                        let mut events = model.stream_completion(request, cx).await?;
-                        log::debug!("Stream completion started successfully");
 
                         let mut tool_use_limit_reached = false;
-                        let mut tool_uses = FuturesUnordered::new();
-                        while let Some(event) = events.next().await {
-                            match event? {
-                                LanguageModelCompletionEvent::StatusUpdate(
-                                    CompletionRequestStatus::ToolUseLimitReached,
-                                ) => {
-                                    tool_use_limit_reached = true;
-                                }
-                                LanguageModelCompletionEvent::Stop(reason) => {
-                                    event_stream.send_stop(reason);
-                                    if reason == StopReason::Refusal {
-                                        this.update(cx, |this, _cx| {
-                                            this.flush_pending_message();
-                                            this.messages.truncate(message_ix);
-                                        })?;
-                                        return Ok(());
-                                    }
-                                }
-                                event => {
-                                    log::trace!("Received completion event: {:?}", event);
-                                    this.update(cx, |this, cx| {
-                                        tool_uses.extend(this.handle_streamed_completion_event(
-                                            event,
-                                            &event_stream,
-                                            cx,
-                                        ));
-                                    })
-                                    .ok();
-                                }
-                            }
-                        }
+                        let mut tool_uses = Self::stream_completion_with_retries(
+                            this.clone(),
+                            model.clone(),
+                            request,
+                            message_ix,
+                            &event_stream,
+                            &mut tool_use_limit_reached,
+                            cx,
+                        )
+                        .await?;
 
                         let used_tools = tool_uses.is_empty();
                         while let Some(tool_result) = tool_uses.next().await {
@@ -738,10 +752,105 @@ impl Thread {
         Ok(events_rx)
     }
 
-    pub fn build_system_message(&self) -> LanguageModelRequestMessage {
+    async fn stream_completion_with_retries(
+        this: WeakEntity<Self>,
+        model: Arc<dyn LanguageModel>,
+        request: LanguageModelRequest,
+        message_ix: usize,
+        event_stream: &AgentResponseEventStream,
+        tool_use_limit_reached: &mut bool,
+        cx: &mut AsyncApp,
+    ) -> Result<FuturesUnordered<Task<LanguageModelToolResult>>> {
+        log::debug!("Stream completion started successfully");
+
+        let mut attempt = None;
+        'retry: loop {
+            let mut events = model.stream_completion(request.clone(), cx).await?;
+            let mut tool_uses = FuturesUnordered::new();
+            while let Some(event) = events.next().await {
+                match event {
+                    Ok(LanguageModelCompletionEvent::StatusUpdate(
+                        CompletionRequestStatus::ToolUseLimitReached,
+                    )) => {
+                        *tool_use_limit_reached = true;
+                    }
+                    Ok(LanguageModelCompletionEvent::Stop(reason)) => {
+                        event_stream.send_stop(reason);
+                        if reason == StopReason::Refusal {
+                            this.update(cx, |this, _cx| {
+                                this.flush_pending_message();
+                                this.messages.truncate(message_ix);
+                            })?;
+                            return Ok(tool_uses);
+                        }
+                    }
+                    Ok(event) => {
+                        log::trace!("Received completion event: {:?}", event);
+                        this.update(cx, |this, cx| {
+                            tool_uses.extend(this.handle_streamed_completion_event(
+                                event,
+                                event_stream,
+                                cx,
+                            ));
+                        })
+                        .ok();
+                    }
+                    Err(error) => {
+                        let completion_mode =
+                            this.read_with(cx, |thread, _cx| thread.completion_mode())?;
+                        if completion_mode == CompletionMode::Normal {
+                            return Err(error.into());
+                        }
+
+                        let Some(strategy) = Self::retry_strategy_for(&error) else {
+                            return Err(error.into());
+                        };
+
+                        let max_attempts = match &strategy {
+                            RetryStrategy::ExponentialBackoff { max_attempts, .. } => *max_attempts,
+                            RetryStrategy::Fixed { max_attempts, .. } => *max_attempts,
+                        };
+
+                        let attempt = attempt.get_or_insert(0u8);
+
+                        *attempt += 1;
+
+                        let attempt = *attempt;
+                        if attempt > max_attempts {
+                            return Err(error.into());
+                        }
+
+                        let delay = match &strategy {
+                            RetryStrategy::ExponentialBackoff { initial_delay, .. } => {
+                                let delay_secs =
+                                    initial_delay.as_secs() * 2u64.pow((attempt - 1) as u32);
+                                Duration::from_secs(delay_secs)
+                            }
+                            RetryStrategy::Fixed { delay, .. } => *delay,
+                        };
+                        log::debug!("Retry attempt {attempt} with delay {delay:?}");
+
+                        event_stream.send_retry(acp_thread::RetryStatus {
+                            last_error: error.to_string().into(),
+                            attempt: attempt as usize,
+                            max_attempts: max_attempts as usize,
+                            started_at: Instant::now(),
+                            duration: delay,
+                        });
+
+                        cx.background_executor().timer(delay).await;
+                        continue 'retry;
+                    }
+                }
+            }
+            return Ok(tool_uses);
+        }
+    }
+
+    pub fn build_system_message(&self, cx: &App) -> LanguageModelRequestMessage {
         log::debug!("Building system message");
         let prompt = SystemPromptTemplate {
-            project: &self.project_context.borrow(),
+            project: self.project_context.read(cx),
             available_tools: self.tools.keys().cloned().collect(),
         }
         .render(&self.templates)
@@ -928,12 +1037,12 @@ impl Thread {
         log::info!("Running tool {}", tool_use.name);
         Some(cx.foreground_executor().spawn(async move {
             let tool_result = tool_result.await.and_then(|output| {
-                if let LanguageModelToolResultContent::Image(_) = &output.llm_output {
-                    if !supports_images {
-                        return Err(anyhow!(
-                            "Attempted to read an image, but this model doesn't support it.",
-                        ));
-                    }
+                if let LanguageModelToolResultContent::Image(_) = &output.llm_output
+                    && !supports_images
+                {
+                    return Err(anyhow!(
+                        "Attempted to read an image, but this model doesn't support it.",
+                    ));
                 }
                 Ok(output)
             });
@@ -1018,7 +1127,7 @@ impl Thread {
         log::debug!("Completion intent: {:?}", completion_intent);
         log::debug!("Completion mode: {:?}", self.completion_mode);
 
-        let messages = self.build_request_messages();
+        let messages = self.build_request_messages(cx);
         log::info!("Request will include {} messages", messages.len());
 
         let tools = if let Some(tools) = self.tools(cx).log_err() {
@@ -1048,7 +1157,7 @@ impl Thread {
             tools,
             tool_choice: None,
             stop: Vec::new(),
-            temperature: AgentSettings::temperature_for_model(&model, cx),
+            temperature: AgentSettings::temperature_for_model(model, cx),
             thinking_allowed: true,
         };
 
@@ -1089,12 +1198,12 @@ impl Thread {
             )))
     }
 
-    fn build_request_messages(&self) -> Vec<LanguageModelRequestMessage> {
+    fn build_request_messages(&self, cx: &App) -> Vec<LanguageModelRequestMessage> {
         log::trace!(
             "Building request messages from {} thread messages",
             self.messages.len()
         );
-        let mut messages = vec![self.build_system_message()];
+        let mut messages = vec![self.build_system_message(cx)];
         for message in &self.messages {
             match message {
                 Message::User(message) => messages.push(message.to_request()),
@@ -1141,6 +1250,113 @@ impl Thread {
 
     fn advance_prompt_id(&mut self) {
         self.prompt_id = PromptId::new();
+    }
+
+    fn retry_strategy_for(error: &LanguageModelCompletionError) -> Option<RetryStrategy> {
+        use LanguageModelCompletionError::*;
+        use http_client::StatusCode;
+
+        // General strategy here:
+        // - If retrying won't help (e.g. invalid API key or payload too large), return None so we don't retry at all.
+        // - If it's a time-based issue (e.g. server overloaded, rate limit exceeded), retry up to 4 times with exponential backoff.
+        // - If it's an issue that *might* be fixed by retrying (e.g. internal server error), retry up to 3 times.
+        match error {
+            HttpResponseError {
+                status_code: StatusCode::TOO_MANY_REQUESTS,
+                ..
+            } => Some(RetryStrategy::ExponentialBackoff {
+                initial_delay: BASE_RETRY_DELAY,
+                max_attempts: MAX_RETRY_ATTEMPTS,
+            }),
+            ServerOverloaded { retry_after, .. } | RateLimitExceeded { retry_after, .. } => {
+                Some(RetryStrategy::Fixed {
+                    delay: retry_after.unwrap_or(BASE_RETRY_DELAY),
+                    max_attempts: MAX_RETRY_ATTEMPTS,
+                })
+            }
+            UpstreamProviderError {
+                status,
+                retry_after,
+                ..
+            } => match *status {
+                StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE => {
+                    Some(RetryStrategy::Fixed {
+                        delay: retry_after.unwrap_or(BASE_RETRY_DELAY),
+                        max_attempts: MAX_RETRY_ATTEMPTS,
+                    })
+                }
+                StatusCode::INTERNAL_SERVER_ERROR => Some(RetryStrategy::Fixed {
+                    delay: retry_after.unwrap_or(BASE_RETRY_DELAY),
+                    // Internal Server Error could be anything, retry up to 3 times.
+                    max_attempts: 3,
+                }),
+                status => {
+                    // There is no StatusCode variant for the unofficial HTTP 529 ("The service is overloaded"),
+                    // but we frequently get them in practice. See https://http.dev/529
+                    if status.as_u16() == 529 {
+                        Some(RetryStrategy::Fixed {
+                            delay: retry_after.unwrap_or(BASE_RETRY_DELAY),
+                            max_attempts: MAX_RETRY_ATTEMPTS,
+                        })
+                    } else {
+                        Some(RetryStrategy::Fixed {
+                            delay: retry_after.unwrap_or(BASE_RETRY_DELAY),
+                            max_attempts: 2,
+                        })
+                    }
+                }
+            },
+            ApiInternalServerError { .. } => Some(RetryStrategy::Fixed {
+                delay: BASE_RETRY_DELAY,
+                max_attempts: 3,
+            }),
+            ApiReadResponseError { .. }
+            | HttpSend { .. }
+            | DeserializeResponse { .. }
+            | BadRequestFormat { .. } => Some(RetryStrategy::Fixed {
+                delay: BASE_RETRY_DELAY,
+                max_attempts: 3,
+            }),
+            // Retrying these errors definitely shouldn't help.
+            HttpResponseError {
+                status_code:
+                    StatusCode::PAYLOAD_TOO_LARGE | StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED,
+                ..
+            }
+            | AuthenticationError { .. }
+            | PermissionError { .. }
+            | NoApiKey { .. }
+            | ApiEndpointNotFound { .. }
+            | PromptTooLarge { .. } => None,
+            // These errors might be transient, so retry them
+            SerializeRequest { .. } | BuildRequestBody { .. } => Some(RetryStrategy::Fixed {
+                delay: BASE_RETRY_DELAY,
+                max_attempts: 1,
+            }),
+            // Retry all other 4xx and 5xx errors once.
+            HttpResponseError { status_code, .. }
+                if status_code.is_client_error() || status_code.is_server_error() =>
+            {
+                Some(RetryStrategy::Fixed {
+                    delay: BASE_RETRY_DELAY,
+                    max_attempts: 3,
+                })
+            }
+            Other(err)
+                if err.is::<language_model::PaymentRequiredError>()
+                    || err.is::<language_model::ModelRequestLimitReachedError>() =>
+            {
+                // Retrying won't help for Payment Required or Model Request Limit errors (where
+                // the user must upgrade to usage-based billing to get more requests, or else wait
+                // for a significant amount of time for the request limit to reset).
+                None
+            }
+            // Conservatively assume that any other errors are non-retryable
+            HttpResponseError { .. } | Other(..) => Some(RetryStrategy::Fixed {
+                delay: BASE_RETRY_DELAY,
+                max_attempts: 2,
+            }),
+        }
     }
 }
 
@@ -1348,6 +1564,12 @@ impl AgentResponseEventStream {
                 }
                 .into(),
             )))
+            .ok();
+    }
+
+    fn send_retry(&self, status: acp_thread::RetryStatus) {
+        self.0
+            .unbounded_send(Ok(AgentResponseEvent::Retry(status)))
             .ok();
     }
 

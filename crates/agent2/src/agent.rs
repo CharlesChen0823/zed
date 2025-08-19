@@ -22,7 +22,6 @@ use prompt_store::{
 };
 use settings::update_settings_file;
 use std::any::Any;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
@@ -91,7 +90,7 @@ impl LanguageModels {
         for provider in &providers {
             for model in provider.recommended_models(cx) {
                 recommended_models.insert(model.id());
-                recommended.push(Self::map_language_model_to_info(&model, &provider));
+                recommended.push(Self::map_language_model_to_info(&model, provider));
             }
         }
         if !recommended.is_empty() {
@@ -156,7 +155,7 @@ pub struct NativeAgent {
     /// Session ID -> Session mapping
     sessions: HashMap<acp::SessionId, Session>,
     /// Shared project context for all threads
-    project_context: Rc<RefCell<ProjectContext>>,
+    project_context: Entity<ProjectContext>,
     project_context_needs_refresh: watch::Sender<()>,
     _maintain_project_context: Task<Result<()>>,
     context_server_registry: Entity<ContextServerRegistry>,
@@ -200,7 +199,7 @@ impl NativeAgent {
                 watch::channel(());
             Self {
                 sessions: HashMap::new(),
-                project_context: Rc::new(RefCell::new(project_context)),
+                project_context: cx.new(|_| project_context),
                 project_context_needs_refresh: project_context_needs_refresh_tx,
                 _maintain_project_context: cx.spawn(async move |this, cx| {
                     Self::maintain_project_context(this, project_context_needs_refresh_rx, cx).await
@@ -233,7 +232,9 @@ impl NativeAgent {
                     Self::build_project_context(&this.project, this.prompt_store.as_ref(), cx)
                 })?
                 .await;
-            this.update(cx, |this, _| this.project_context.replace(project_context))?;
+            this.update(cx, |this, cx| {
+                this.project_context = cx.new(|_| project_context);
+            })?;
         }
 
         Ok(())
@@ -544,6 +545,11 @@ impl NativeAgentConnection {
                                 acp_thread.update(cx, |thread, cx| {
                                     thread.update_tool_call(update, cx)
                                 })??;
+                            }
+                            AgentResponseEvent::Retry(status) => {
+                                acp_thread.update(cx, |thread, cx| {
+                                    thread.update_retry_status(status, cx)
+                                })?;
                             }
                             AgentResponseEvent::Stop(stop_reason) => {
                                 log::debug!("Assistant message complete: {:?}", stop_reason);
@@ -872,8 +878,8 @@ mod tests {
         )
         .await
         .unwrap();
-        agent.read_with(cx, |agent, _| {
-            assert_eq!(agent.project_context.borrow().worktrees, vec![])
+        agent.read_with(cx, |agent, cx| {
+            assert_eq!(agent.project_context.read(cx).worktrees, vec![])
         });
 
         let worktree = project
@@ -881,9 +887,9 @@ mod tests {
             .await
             .unwrap();
         cx.run_until_parked();
-        agent.read_with(cx, |agent, _| {
+        agent.read_with(cx, |agent, cx| {
             assert_eq!(
-                agent.project_context.borrow().worktrees,
+                agent.project_context.read(cx).worktrees,
                 vec![WorktreeContext {
                     root_name: "a".into(),
                     abs_path: Path::new("/a").into(),
@@ -898,7 +904,7 @@ mod tests {
         agent.read_with(cx, |agent, cx| {
             let rules_entry = worktree.read(cx).entry_for_path(".rules").unwrap();
             assert_eq!(
-                agent.project_context.borrow().worktrees,
+                agent.project_context.read(cx).worktrees,
                 vec![WorktreeContext {
                     root_name: "a".into(),
                     abs_path: Path::new("/a").into(),
