@@ -5,7 +5,7 @@ use anyhow::Result;
 use collections::{FxHashMap, HashMap, HashSet};
 use ec4rs::{
     Properties as EditorconfigProperties,
-    property::{FinalNewline, IndentSize, IndentStyle, TabWidth, TrimTrailingWs},
+    property::{FinalNewline, IndentSize, IndentStyle, MaxLineLen, TabWidth, TrimTrailingWs},
 };
 use globset::{Glob, GlobMatcher, GlobSet, GlobSetBuilder};
 use gpui::{App, Modifiers};
@@ -199,7 +199,7 @@ impl LanguageSettings {
                 if language_server.0.as_ref() == Self::REST_OF_LANGUAGE_SERVERS {
                     rest.clone()
                 } else {
-                    vec![language_server.clone()]
+                    vec![language_server]
                 }
             })
             .collect::<Vec<_>>()
@@ -253,7 +253,7 @@ impl EditPredictionSettings {
         !self.disabled_globs.iter().any(|glob| {
             if glob.is_absolute {
                 file.as_local()
-                    .map_or(false, |local| glob.matcher.is_match(local.abs_path(cx)))
+                    .is_some_and(|local| glob.matcher.is_match(local.abs_path(cx)))
             } else {
                 glob.matcher.is_match(file.path())
             }
@@ -1131,6 +1131,10 @@ impl AllLanguageSettings {
 }
 
 fn merge_with_editorconfig(settings: &mut LanguageSettings, cfg: &EditorconfigProperties) {
+    let preferred_line_length = cfg.get::<MaxLineLen>().ok().and_then(|v| match v {
+        MaxLineLen::Value(u) => Some(u as u32),
+        MaxLineLen::Off => None,
+    });
     let tab_size = cfg.get::<IndentSize>().ok().and_then(|v| match v {
         IndentSize::Value(u) => NonZeroU32::new(u as u32),
         IndentSize::UseTabWidth => cfg.get::<TabWidth>().ok().and_then(|w| match w {
@@ -1158,6 +1162,7 @@ fn merge_with_editorconfig(settings: &mut LanguageSettings, cfg: &EditorconfigPr
             *target = value;
         }
     }
+    merge(&mut settings.preferred_line_length, preferred_line_length);
     merge(&mut settings.tab_size, tab_size);
     merge(&mut settings.hard_tabs, hard_tabs);
     merge(
@@ -1793,7 +1798,7 @@ mod tests {
         assert!(!settings.enabled_for_file(&dot_env_file, &cx));
 
         // Test tilde expansion
-        let home = shellexpand::tilde("~").into_owned().to_string();
+        let home = shellexpand::tilde("~").into_owned();
         let home_file = make_test_file(&[&home, "test.rs"]);
         let settings = build_settings(&["~/test.rs"]);
         assert!(!settings.enabled_for_file(&home_file, &cx));
