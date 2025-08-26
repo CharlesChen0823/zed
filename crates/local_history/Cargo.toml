@@ -1,0 +1,86 @@
+[package]
+name = "local_history"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/local_history.rs"
+doctest = false
+
+[features]
+test-support = [
+]
+
+[dependencies]
+aho-corasick.workspace = true
+anyhow.workspace = true
+askpass.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+buffer_diff.workspace = true
+circular-buffer.workspace = true
+client.workspace = true
+clock.workspace = true
+collections.workspace = true
+fancy-regex.workspace = true
+fs.workspace = true
+futures.workspace = true
+fuzzy.workspace = true
+globset.workspace = true
+gpui.workspace = true
+http_client.workspace = true
+itertools.workspace = true
+indexmap.workspace = true
+language.workspace = true
+log.workspace = true
+lsp.workspace = true
+markdown.workspace = true
+node_runtime.workspace = true
+parking_lot.workspace = true
+pathdiff.workspace = true
+paths.workspace = true
+picker.workspace = true
+rand.workspace = true
+regex.workspace = true
+remote.workspace = true
+rpc.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+sha2.workspace = true
+shellexpand.workspace = true
+shlex.workspace = true
+smallvec.workspace = true
+smol.workspace = true
+task.workspace = true
+tempfile.workspace = true
+text.workspace = true
+toml.workspace = true
+ui.workspace = true
+url.workspace = true
+util.workspace = true
+which.workspace = true
+worktree.workspace = true
+workspace.workspace = true
+zlog.workspace = true
+workspace-hack.workspace = true
+
+[dev-dependencies]
+client = { workspace = true, features = ["test-support"] }
+collections = { workspace = true, features = ["test-support"] }
+buffer_diff = { workspace = true, features = ["test-support"] }
+fs = { workspace = true, features = ["test-support"] }
+gpui = { workspace = true, features = ["test-support"] }
+language = { workspace = true, features = ["test-support"] }
+release_channel.workspace = true
+rpc = { workspace = true, features = ["test-support"] }
+settings = { workspace = true, features = ["test-support"] }
+unindent.workspace = true
+util = { workspace = true, features = ["test-support"] }
+worktree = { workspace = true, features = ["test-support"] }

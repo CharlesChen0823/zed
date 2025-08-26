@@ -17,6 +17,7 @@ pub mod task_store;
 pub mod terminals;
 pub mod toolchain_store;
 pub mod worktree_store;
+pub mod local_history_store;
 
 #[cfg(test)]
 mod project_tests;

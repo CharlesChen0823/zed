@@ -520,3 +520,11 @@ fn add_vscode_user_data_paths(paths: &mut Vec<PathBuf>, product_name: &str) {
         );
     }
 }
+
+/// Returns the path to the LocalHistory directory.
+///
+/// This is where themes that are not provided by extensions are stored.
+pub fn local_history_dir() -> &'static PathBuf {
+    static LOCAL_HISTORY_DIR: OnceLock<PathBuf> = OnceLock::new();
+    LOCAL_HISTORY_DIR.get_or_init(|| config_dir().join("local_history"))
+}

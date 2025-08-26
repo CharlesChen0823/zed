@@ -9699,6 +9699,67 @@ dependencies = [
 ]
 
 [[package]]
+name = "local_history"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "anyhow",
+ "askpass",
+ "async-trait",
+ "base64 0.22.1",
+ "buffer_diff",
+ "circular-buffer",
+ "client",
+ "clock",
+ "collections",
+ "fancy-regex 0.14.0",
+ "fs",
+ "futures 0.3.31",
+ "fuzzy",
+ "globset",
+ "gpui",
+ "http_client",
+ "indexmap",
+ "itertools 0.14.0",
+ "language",
+ "log",
+ "lsp",
+ "markdown",
+ "node_runtime",
+ "parking_lot",
+ "pathdiff",
+ "paths",
+ "picker",
+ "rand 0.8.5",
+ "regex",
+ "release_channel",
+ "remote",
+ "rpc",
+ "schemars",
+ "serde",
+ "serde_json",
+ "settings",
+ "sha2",
+ "shellexpand 2.1.2",
+ "shlex",
+ "smallvec",
+ "smol",
+ "task",
+ "tempfile",
+ "text",
+ "toml 0.8.20",
+ "ui",
+ "unindent",
+ "url",
+ "util",
+ "which 6.0.3",
+ "workspace",
+ "workspace-hack",
+ "worktree",
+ "zlog",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
