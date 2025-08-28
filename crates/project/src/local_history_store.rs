@@ -129,12 +129,13 @@ impl LocalHistoryStore {
     }
 
     // todo!()
-    // 1. should subscribe the file delete
-    // 2. should subscribe the buffer save
-    // 3. should subscribe the file copy
-    // 4. should subscribe the file create
-    // 5. should subscribe the file rename
-    // 6. should subscribe the app quit, and serialize local_history to local
+    // 1. subscribe workspace::pane::RemovedItem event
+    // 2. subscribe workspace::pane::UserSavedItem event
+    // 3. subscribe workspace::pane::autosave_item / might add new event
+    // 4. subscribe project::copy_entry / might add new event
+    // 5. subscribe project::create_entry / might add new event
+    // 6. subscribe project::rename_entry EntryRenamed event
+    // 7. should subscribe the app quit, and serialize local_history to local
 
     pub fn list_entries(&self) -> Vec<HistoryEntry> {
         self.history_entity.clone()
