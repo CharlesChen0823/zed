@@ -950,6 +950,7 @@ async fn test_mcp_tools(cx: &mut TestAppContext) {
         paths::settings_file(),
         json!({
             "agent": {
+                "always_allow_tool_actions": true,
                 "profiles": {
                     "test": {
                         "name": "Test Profile",
@@ -1822,11 +1823,11 @@ async fn test_agent_connection(cx: &mut TestAppContext) {
         let clock = Arc::new(clock::FakeSystemClock::new());
         let client = Client::new(clock, http_client, cx);
         let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
-        Project::init_settings(cx);
-        agent_settings::init(cx);
         language_model::init(client.clone(), cx);
         language_models::init(user_store, client.clone(), cx);
+        Project::init_settings(cx);
         LanguageModelRegistry::test(cx);
+        agent_settings::init(cx);
     });
     cx.executor().forbid_parking();
 
