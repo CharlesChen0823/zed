@@ -175,9 +175,6 @@ messages!(
     (ReorderChannel, Foreground),
     (LspQuery, Background),
     (LspQueryResponse, Background),
-    // todo(lsp) remove after Zed Stable hits v0.204.x
-    (MultiLspQuery, Background),
-    (MultiLspQueryResponse, Background),
     (OnTypeFormatting, Background),
     (OnTypeFormattingResponse, Background),
     (OpenBufferById, Background),
@@ -319,6 +316,11 @@ messages!(
     (GitClone, Background),
     (GitCloneResponse, Background),
     (ToggleLspLogs, Background),
+    (GetAgentServerCommand, Background),
+    (AgentServerCommand, Background),
+    (ExternalAgentsUpdated, Background),
+    (ExternalAgentLoadingStatusUpdated, Background),
+    (NewExternalAgentVersionAvailable, Background),
 );
 
 request_messages!(
@@ -435,8 +437,6 @@ request_messages!(
     (SetRoomParticipantRole, Ack),
     (BlameBuffer, BlameBufferResponse),
     (RejoinRemoteProjects, RejoinRemoteProjectsResponse),
-    // todo(lsp) remove after Zed Stable hits v0.204.x
-    (MultiLspQuery, MultiLspQueryResponse),
     (LspQuery, Ack),
     (LspQueryResponse, Ack),
     (RestartLanguageServers, Ack),
@@ -491,6 +491,7 @@ request_messages!(
     (GitClone, GitCloneResponse),
     (ToggleLspLogs, Ack),
     (GetProcesses, GetProcessesResponse),
+    (GetAgentServerCommand, AgentServerCommand)
 );
 
 lsp_messages!(
@@ -551,8 +552,6 @@ entity_messages!(
     LoadCommitDiff,
     LspQuery,
     LspQueryResponse,
-    // todo(lsp) remove after Zed Stable hits v0.204.x
-    MultiLspQuery,
     RestartLanguageServers,
     StopLanguageServers,
     OnTypeFormatting,
@@ -644,7 +643,11 @@ entity_messages!(
     GetDocumentDiagnostics,
     PullWorkspaceDiagnostics,
     GetDefaultBranch,
-    GitClone
+    GitClone,
+    GetAgentServerCommand,
+    ExternalAgentsUpdated,
+    ExternalAgentLoadingStatusUpdated,
+    NewExternalAgentVersionAvailable,
 );
 
 entity_messages!(
@@ -830,26 +833,6 @@ impl LspQuery {
             Some(lsp_query::Request::GetReferences(_)) => ("GetReferences", false),
             Some(lsp_query::Request::GetDocumentColor(_)) => ("GetDocumentColor", false),
             None => ("<unknown>", true),
-        }
-    }
-}
-
-// todo(lsp) remove after Zed Stable hits v0.204.x
-impl MultiLspQuery {
-    pub fn request_str(&self) -> &str {
-        match self.request {
-            Some(multi_lsp_query::Request::GetHover(_)) => "GetHover",
-            Some(multi_lsp_query::Request::GetCodeActions(_)) => "GetCodeActions",
-            Some(multi_lsp_query::Request::GetSignatureHelp(_)) => "GetSignatureHelp",
-            Some(multi_lsp_query::Request::GetCodeLens(_)) => "GetCodeLens",
-            Some(multi_lsp_query::Request::GetDocumentDiagnostics(_)) => "GetDocumentDiagnostics",
-            Some(multi_lsp_query::Request::GetDocumentColor(_)) => "GetDocumentColor",
-            Some(multi_lsp_query::Request::GetDefinition(_)) => "GetDefinition",
-            Some(multi_lsp_query::Request::GetDeclaration(_)) => "GetDeclaration",
-            Some(multi_lsp_query::Request::GetTypeDefinition(_)) => "GetTypeDefinition",
-            Some(multi_lsp_query::Request::GetImplementation(_)) => "GetImplementation",
-            Some(multi_lsp_query::Request::GetReferences(_)) => "GetReferences",
-            None => "<unknown>",
         }
     }
 }
