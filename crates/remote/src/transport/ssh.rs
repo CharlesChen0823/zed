@@ -15,8 +15,7 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use release_channel::{AppCommitSha, AppVersion, ReleaseChannel};
 use rpc::proto::Envelope;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+pub use settings::SshPortForwardOption;
 use smol::{
     fs,
     process::{self, Child, Stdio},
@@ -37,6 +36,7 @@ pub(crate) struct SshRemoteConnection {
     ssh_platform: RemotePlatform,
     ssh_path_style: PathStyle,
     ssh_shell: String,
+    ssh_default_system_shell: String,
     _temp_dir: TempDir,
 }
 
@@ -53,14 +53,19 @@ pub struct SshConnectionOptions {
     pub upload_binary_over_ssh: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
-pub struct SshPortForwardOption {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub local_host: Option<String>,
-    pub local_port: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote_host: Option<String>,
-    pub remote_port: u16,
+impl From<settings::SshConnection> for SshConnectionOptions {
+    fn from(val: settings::SshConnection) -> Self {
+        SshConnectionOptions {
+            host: val.host.into(),
+            username: val.username,
+            port: val.port,
+            password: None,
+            args: Some(val.args),
+            nickname: val.nickname,
+            upload_binary_over_ssh: val.upload_binary_over_ssh.unwrap_or_default(),
+            port_forwards: val.port_forwards,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -103,6 +108,10 @@ impl RemoteConnection for SshRemoteConnection {
 
     fn shell(&self) -> String {
         self.ssh_shell.clone()
+    }
+
+    fn default_system_shell(&self) -> String {
+        self.ssh_default_system_shell.clone()
     }
 
     fn build_command(
@@ -347,6 +356,7 @@ impl SshRemoteConnection {
             _ => PathStyle::Posix,
         };
         let ssh_shell = socket.shell().await;
+        let ssh_default_system_shell = String::from("/bin/sh");
 
         let mut this = Self {
             socket,
@@ -356,6 +366,7 @@ impl SshRemoteConnection {
             ssh_path_style,
             ssh_platform,
             ssh_shell,
+            ssh_default_system_shell,
         };
 
         let (release_channel, version, commit) = cx.update(|cx| {

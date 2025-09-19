@@ -7,7 +7,7 @@ use acp_thread::{AgentConnection, Plan};
 use action_log::ActionLog;
 use agent_client_protocol::{self as acp, PromptCapabilities};
 use agent_servers::{AgentServer, AgentServerDelegate};
-use agent_settings::{AgentProfileId, AgentSettings, CompletionMode, NotifyWhenAgentWaiting};
+use agent_settings::{AgentProfileId, AgentSettings, CompletionMode};
 use agent2::{DbThreadMetadata, HistoryEntry, HistoryEntryId, HistoryStore, NativeAgentServer};
 use anyhow::{Result, anyhow, bail};
 use arrayvec::ArrayVec;
@@ -35,7 +35,7 @@ use markdown::{HeadingLevelStyles, Markdown, MarkdownElement, MarkdownStyle};
 use project::{Project, ProjectEntryId};
 use prompt_store::{PromptId, PromptStore};
 use rope::Point;
-use settings::{Settings as _, SettingsStore};
+use settings::{NotifyWhenAgentWaiting, Settings as _, SettingsStore};
 use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
@@ -70,9 +70,6 @@ use crate::{
     CycleModeSelector, ExpandMessageEditor, Follow, KeepAll, OpenAgentDiff, OpenHistory, RejectAll,
     RejectOnce, ToggleBurnMode, ToggleProfileSelector,
 };
-
-pub const MIN_EDITOR_LINES: usize = 4;
-pub const MAX_EDITOR_LINES: usize = 8;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum ThreadFeedback {
@@ -357,8 +354,8 @@ impl AcpThreadView {
                 agent.name(),
                 &placeholder,
                 editor::EditorMode::AutoHeight {
-                    min_lines: MIN_EDITOR_LINES,
-                    max_lines: Some(MAX_EDITOR_LINES),
+                    min_lines: AgentSettings::get_global(cx).message_editor_min_lines,
+                    max_lines: Some(AgentSettings::get_global(cx).set_message_editor_max_lines()),
                 },
                 window,
                 cx,
@@ -857,10 +854,11 @@ impl AcpThreadView {
                     cx,
                 )
             } else {
+                let agent_settings = AgentSettings::get_global(cx);
                 editor.set_mode(
                     EditorMode::AutoHeight {
-                        min_lines: MIN_EDITOR_LINES,
-                        max_lines: Some(MAX_EDITOR_LINES),
+                        min_lines: agent_settings.message_editor_min_lines,
+                        max_lines: Some(agent_settings.set_message_editor_max_lines()),
                     },
                     cx,
                 )
@@ -1593,7 +1591,7 @@ impl AcpThreadView {
             task.shell = shell;
 
             let terminal = terminal_panel.update_in(cx, |terminal_panel, window, cx| {
-                terminal_panel.spawn_task(login.clone(), window, cx)
+                terminal_panel.spawn_task(&login, window, cx)
             })?;
 
             let terminal = terminal.await?;
@@ -3184,10 +3182,14 @@ impl AcpThreadView {
                                     };
 
                                     Button::new(SharedString::from(method_id.clone()), name)
-                                        .when(ix == 0, |el| {
-                                            el.style(ButtonStyle::Tinted(ui::TintColor::Warning))
-                                        })
                                         .label_size(LabelSize::Small)
+                                        .map(|this| {
+                                            if ix == 0 {
+                                                this.style(ButtonStyle::Tinted(TintColor::Warning))
+                                            } else {
+                                                this.style(ButtonStyle::Outlined)
+                                            }
+                                        })
                                         .on_click({
                                             cx.listener(move |this, _, window, cx| {
                                                 telemetry::event!(
