@@ -219,8 +219,9 @@ members = [
     # Tooling
     #
 
+    "tooling/perf",
     "tooling/workspace-hack",
-    "tooling/xtask", "tooling/perf",
+    "tooling/xtask",
 ]
 default-members = ["crates/zed"]
 
@@ -355,6 +356,7 @@ outline = { path = "crates/outline" }
 outline_panel = { path = "crates/outline_panel" }
 panel = { path = "crates/panel" }
 paths = { path = "crates/paths" }
+perf = { path = "tooling/perf" }
 picker = { path = "crates/picker" }
 plugin = { path = "crates/plugin" }
 plugin_macros = { path = "crates/plugin_macros" }
