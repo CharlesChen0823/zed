@@ -299,7 +299,13 @@ pub(crate) fn settings_data() -> Vec<SettingsPage> {
                     title: "Agent Panel UI Font Size",
                     description: "Font size for agent response text in the agent panel. Falls back to the regular UI font size.",
                     field: Box::new(SettingField {
-                        pick: |settings_content| &settings_content.theme.agent_ui_font_size,
+                        pick: |settings_content| {
+                            if settings_content.theme.agent_ui_font_size.is_some() {
+                                &settings_content.theme.agent_ui_font_size
+                            } else {
+                                &settings_content.theme.ui_font_size
+                            }
+                        },
                         pick_mut: |settings_content| &mut settings_content.theme.agent_ui_font_size,
                     }),
                     metadata: None,
@@ -571,18 +577,6 @@ pub(crate) fn settings_data() -> Vec<SettingsPage> {
                     field: Box::new(SettingField {
                         pick: |settings_content| &settings_content.workspace.zoomed_padding,
                         pick_mut: |settings_content| &mut settings_content.workspace.zoomed_padding,
-                    }),
-                    metadata: None,
-                    files: USER,
-                }),
-                SettingsPageItem::SettingItem(SettingItem {
-                    title: "Use System Window Tabs",
-                    description: "(macOS-only) Whether to allow windows to merge based on the user's tabbing preference",
-                    field: Box::new(SettingField {
-                        pick: |settings_content| &settings_content.workspace.use_system_window_tabs,
-                        pick_mut: |settings_content| {
-                            &mut settings_content.workspace.use_system_window_tabs
-                        },
                     }),
                     metadata: None,
                     files: USER,
@@ -1618,40 +1612,65 @@ pub(crate) fn settings_data() -> Vec<SettingsPage> {
                     title: "JSON",
                     files: USER | LOCAL,
                     render: Arc::new(|this, window, cx| {
-                        this.render_page_items(language_settings_data().iter(), window, cx)
-                            .into_any_element()
+                        this.render_page_items(
+                            language_settings_data().iter().enumerate(),
+                            None,
+                            window,
+                            cx,
+                        )
+                        .into_any_element()
                     }),
                 }),
                 SettingsPageItem::SubPageLink(SubPageLink {
                     title: "JSONC",
                     files: USER | LOCAL,
                     render: Arc::new(|this, window, cx| {
-                        this.render_page_items(language_settings_data().iter(), window, cx)
-                            .into_any_element()
+                        this.render_page_items(
+                            language_settings_data().iter().enumerate(),
+                            None,
+                            window,
+                            cx,
+                        )
+                        .into_any_element()
                     }),
                 }),
                 SettingsPageItem::SubPageLink(SubPageLink {
                     title: "Rust",
                     files: USER | LOCAL,
                     render: Arc::new(|this, window, cx| {
-                        this.render_page_items(language_settings_data().iter(), window, cx)
-                            .into_any_element()
+                        this.render_page_items(
+                            language_settings_data().iter().enumerate(),
+                            None,
+                            window,
+                            cx,
+                        )
+                        .into_any_element()
                     }),
                 }),
                 SettingsPageItem::SubPageLink(SubPageLink {
                     title: "Python",
                     files: USER | LOCAL,
                     render: Arc::new(|this, window, cx| {
-                        this.render_page_items(language_settings_data().iter(), window, cx)
-                            .into_any_element()
+                        this.render_page_items(
+                            language_settings_data().iter().enumerate(),
+                            None,
+                            window,
+                            cx,
+                        )
+                        .into_any_element()
                     }),
                 }),
                 SettingsPageItem::SubPageLink(SubPageLink {
                     title: "TSX",
                     files: USER | LOCAL,
                     render: Arc::new(|this, window, cx| {
-                        this.render_page_items(language_settings_data().iter(), window, cx)
-                            .into_any_element()
+                        this.render_page_items(
+                            language_settings_data().iter().enumerate(),
+                            None,
+                            window,
+                            cx,
+                        )
+                        .into_any_element()
                     }),
                 }),
             ],
@@ -2399,7 +2418,7 @@ pub(crate) fn settings_data() -> Vec<SettingsPage> {
                 }),
                 SettingsPageItem::SettingItem(SettingItem {
                     title: "File Icons",
-                    description: "Whether to show folder icons or chevrons for directories in the project panel",
+                    description: "Whether to show file icons in the project panel",
                     field: Box::new(SettingField {
                         pick: |settings_content| {
                             if let Some(project_panel) = &settings_content.project_panel {
