@@ -32,6 +32,7 @@ dependencies = [
  "settings",
  "smol",
  "task",
+ "telemetry",
  "tempfile",
  "terminal",
  "ui",
@@ -39,6 +40,7 @@ dependencies = [
  "util",
  "uuid",
  "watch",
+ "zlog",
 ]
 
 [[package]]
@@ -79,6 +81,7 @@ dependencies = [
  "rand 0.9.2",
  "serde_json",
  "settings",
+ "telemetry",
  "text",
  "util",
  "watch",
@@ -142,7 +145,7 @@ dependencies = [
  "agent_servers",
  "agent_settings",
  "anyhow",
- "assistant_context",
+ "assistant_text_thread",
  "chrono",
  "client",
  "clock",
@@ -151,7 +154,7 @@ dependencies = [
  "context_server",
  "ctor",
  "db",
- "derive_more",
+ "derive_more 0.99.20",
  "editor",
  "env_logger 0.11.8",
  "fs",
@@ -210,16 +213,30 @@ dependencies = [
 
 [[package]]
 name = "agent-client-protocol"
-version = "0.4.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3aaa2bd05a2401887945f8bfd70026e90bc3cf96c62ab9eba2779835bf21dc60"
+checksum = "525705e39c11cd73f7bc784e3681a9386aa30c8d0630808d3dc2237eb4f9cb1b"
 dependencies = [
+ "agent-client-protocol-schema",
  "anyhow",
  "async-broadcast",
  "async-trait",
+ "derive_more 2.0.1",
  "futures 0.3.31",
  "log",
  "parking_lot",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "agent-client-protocol-schema"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecf16c18fea41282d6bbadd1549a06be6836bddb1893f44a6235f340fa24e2af"
+dependencies = [
+ "anyhow",
+ "derive_more 2.0.1",
  "schemars 1.0.4",
  "serde",
  "serde_json",
@@ -252,6 +269,7 @@ dependencies = [
  "log",
  "nix 0.29.0",
  "project",
+ "release_channel",
  "reqwest_client",
  "serde",
  "serde_json",
@@ -301,9 +319,9 @@ dependencies = [
  "ai_onboarding",
  "anyhow",
  "arrayvec",
- "assistant_context",
  "assistant_slash_command",
  "assistant_slash_commands",
+ "assistant_text_thread",
  "audio",
  "buffer_diff",
  "chrono",
@@ -789,60 +807,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "assistant_context"
-version = "0.1.0"
-dependencies = [
- "agent_settings",
- "anyhow",
- "assistant_slash_command",
- "assistant_slash_commands",
- "chrono",
- "client",
- "clock",
- "cloud_llm_client",
- "collections",
- "context_server",
- "fs",
- "futures 0.3.31",
- "fuzzy",
- "gpui",
- "indoc",
- "language",
- "language_model",
- "log",
- "open_ai",
- "parking_lot",
- "paths",
- "pretty_assertions",
- "project",
- "prompt_store",
- "proto",
- "rand 0.9.2",
- "regex",
- "rpc",
- "serde",
- "serde_json",
- "settings",
- "smallvec",
- "smol",
- "telemetry_events",
- "text",
- "ui",
- "unindent",
- "util",
- "uuid",
- "workspace",
- "zed_env_vars",
-]
-
-[[package]]
 name = "assistant_slash_command"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "collections",
- "derive_more",
+ "derive_more 0.99.20",
  "extension",
  "futures 0.3.31",
  "gpui",
@@ -890,6 +861,53 @@ dependencies = [
  "workspace",
  "worktree",
  "zlog",
+]
+
+[[package]]
+name = "assistant_text_thread"
+version = "0.1.0"
+dependencies = [
+ "agent_settings",
+ "anyhow",
+ "assistant_slash_command",
+ "assistant_slash_commands",
+ "chrono",
+ "client",
+ "clock",
+ "cloud_llm_client",
+ "collections",
+ "context_server",
+ "fs",
+ "futures 0.3.31",
+ "fuzzy",
+ "gpui",
+ "indoc",
+ "language",
+ "language_model",
+ "log",
+ "open_ai",
+ "parking_lot",
+ "paths",
+ "pretty_assertions",
+ "project",
+ "prompt_store",
+ "proto",
+ "rand 0.9.2",
+ "regex",
+ "rpc",
+ "serde",
+ "serde_json",
+ "settings",
+ "smallvec",
+ "smol",
+ "telemetry_events",
+ "text",
+ "ui",
+ "unindent",
+ "util",
+ "uuid",
+ "workspace",
+ "zed_env_vars",
 ]
 
 [[package]]
@@ -1170,9 +1188,9 @@ dependencies = [
 
 [[package]]
 name = "async-tar"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a42f905d4f623faf634bbd1e001e84e0efc24694afa64be9ad239bf6ca49e1f8"
+checksum = "d1937db2d56578aa3919b9bdb0e5100693fd7d1c0f145c53eb81fbb03e217550"
 dependencies = [
  "async-std",
  "filetime",
@@ -1324,6 +1342,7 @@ dependencies = [
  "settings",
  "smol",
  "tempfile",
+ "util",
  "which 6.0.3",
  "workspace",
 ]
@@ -1335,6 +1354,7 @@ dependencies = [
  "anyhow",
  "log",
  "simplelog",
+ "tempfile",
  "windows 0.61.3",
  "winresource",
 ]
@@ -2064,7 +2084,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2084,7 +2104,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -3059,6 +3079,7 @@ dependencies = [
  "parking_lot",
  "paths",
  "plist",
+ "rayon",
  "release_channel",
  "serde",
  "tempfile",
@@ -3079,7 +3100,7 @@ dependencies = [
  "cloud_llm_client",
  "collections",
  "credentials_provider",
- "derive_more",
+ "derive_more 0.99.20",
  "feature_flags",
  "fs",
  "futures 0.3.31",
@@ -3180,7 +3201,9 @@ dependencies = [
  "indoc",
  "ordered-float 2.10.1",
  "rustc-hash 2.1.1",
+ "schemars 1.0.4",
  "serde",
+ "serde_json",
  "strum 0.27.2",
 ]
 
@@ -3310,8 +3333,8 @@ version = "0.44.0"
 dependencies = [
  "agent_settings",
  "anyhow",
- "assistant_context",
  "assistant_slash_command",
+ "assistant_text_thread",
  "async-trait",
  "async-tungstenite",
  "audio",
@@ -3379,6 +3402,7 @@ dependencies = [
  "rpc",
  "scrypt",
  "sea-orm",
+ "sea-orm-macros",
  "semantic_version",
  "semver",
  "serde",
@@ -3539,7 +3563,7 @@ name = "command_palette_hooks"
 version = "0.1.0"
 dependencies = [
  "collections",
- "derive_more",
+ "derive_more 0.99.20",
  "gpui",
  "workspace",
 ]
@@ -4117,6 +4141,7 @@ dependencies = [
  "bincode 1.3.3",
  "cfg-if",
  "crash-handler",
+ "extension_host",
  "log",
  "mach2 0.5.0",
  "minidumper",
@@ -4510,13 +4535,15 @@ dependencies = [
  "fs",
  "futures 0.3.31",
  "gpui",
+ "http_client",
  "json_dotpath",
  "language",
  "log",
+ "node_runtime",
  "paths",
  "serde",
  "serde_json",
- "shlex",
+ "settings",
  "smol",
  "task",
  "util",
@@ -4742,7 +4769,6 @@ dependencies = [
  "serde_json",
  "serde_json_lenient",
  "settings",
- "shlex",
  "sysinfo 0.37.2",
  "task",
  "tasks_ui",
@@ -4857,9 +4883,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_more"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+ "unicode-xid",
+]
+
+[[package]]
 name = "derive_refineable"
 version = "0.1.0"
 dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "derive_setters"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae5c625eda104c228c06ecaf988d1c60e542176bd7a490e60eeda3493244c0c9"
+dependencies = [
+ "darling 0.20.11",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -4883,6 +4942,7 @@ dependencies = [
  "editor",
  "gpui",
  "indoc",
+ "itertools 0.14.0",
  "language",
  "log",
  "lsp",
@@ -5002,7 +5062,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5332,6 +5392,7 @@ dependencies = [
  "rand 0.9.2",
  "regex",
  "release_channel",
+ "rope",
  "rpc",
  "schemars 1.0.4",
  "serde",
@@ -5606,7 +5667,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5653,6 +5714,61 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad9cdb4b747e485a12abb0e6566612956c7a1bafa3bdb8d682c5b6d403589e48"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "eval"
+version = "0.1.0"
+dependencies = [
+ "acp_thread",
+ "agent",
+ "agent-client-protocol",
+ "agent_settings",
+ "agent_ui",
+ "anyhow",
+ "async-trait",
+ "buffer_diff",
+ "chrono",
+ "clap",
+ "client",
+ "collections",
+ "debug_adapter_extension",
+ "dirs 4.0.0",
+ "dotenvy",
+ "env_logger 0.11.8",
+ "extension",
+ "fs",
+ "futures 0.3.31",
+ "gpui",
+ "gpui_tokio",
+ "handlebars 4.5.0",
+ "language",
+ "language_extension",
+ "language_model",
+ "language_models",
+ "languages",
+ "markdown",
+ "node_runtime",
+ "pathdiff",
+ "paths",
+ "pretty_assertions",
+ "project",
+ "prompt_store",
+ "rand 0.9.2",
+ "regex",
+ "release_channel",
+ "reqwest_client",
+ "serde",
+ "serde_json",
+ "settings",
+ "shellexpand 2.1.2",
+ "telemetry",
+ "terminal_view",
+ "toml 0.8.23",
+ "unindent",
+ "util",
+ "uuid",
+ "watch",
 ]
 
 [[package]]
@@ -5727,8 +5843,6 @@ name = "extension"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-compression",
- "async-tar",
  "async-trait",
  "collections",
  "dap",
@@ -5793,6 +5907,7 @@ dependencies = [
  "fs",
  "futures 0.3.31",
  "gpui",
+ "gpui_tokio",
  "http_client",
  "language",
  "language_extension",
@@ -6294,7 +6409,7 @@ dependencies = [
  "ignore",
  "libc",
  "log",
- "notify 8.0.0",
+ "notify 8.2.0",
  "objc",
  "parking_lot",
  "paths",
@@ -6339,6 +6454,14 @@ checksum = "8640e34b88f7652208ce9e88b1a37a2ae95227d84abec377ccd3c5cfeb141ed4"
 dependencies = [
  "rustix 1.1.2",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "fs_benchmarks"
+version = "0.1.0"
+dependencies = [
+ "fs",
+ "gpui",
 ]
 
 [[package]]
@@ -6841,6 +6964,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "gh-workflow"
+version = "0.8.0"
+source = "git+https://github.com/zed-industries/gh-workflow?rev=3eaa84abca0778eb54272f45a312cb24f9a0b435#3eaa84abca0778eb54272f45a312cb24f9a0b435"
+dependencies = [
+ "async-trait",
+ "derive_more 2.0.1",
+ "derive_setters",
+ "gh-workflow-macros",
+ "indexmap 2.11.4",
+ "merge",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "strum_macros 0.27.2",
+]
+
+[[package]]
+name = "gh-workflow-macros"
+version = "0.8.0"
+source = "git+https://github.com/zed-industries/gh-workflow?rev=3eaa84abca0778eb54272f45a312cb24f9a0b435#3eaa84abca0778eb54272f45a312cb24f9a0b435"
+dependencies = [
+ "heck 0.5.0",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "gif"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6875,7 +7025,7 @@ dependencies = [
  "askpass",
  "async-trait",
  "collections",
- "derive_more",
+ "derive_more 0.99.20",
  "futures 0.3.31",
  "git2",
  "gpui",
@@ -6933,6 +7083,7 @@ dependencies = [
  "serde_json",
  "settings",
  "url",
+ "urlencoding",
  "util",
 ]
 
@@ -6945,7 +7096,6 @@ dependencies = [
  "askpass",
  "buffer_diff",
  "call",
- "chrono",
  "cloud_llm_client",
  "collections",
  "command_palette_hooks",
@@ -6969,9 +7119,10 @@ dependencies = [
  "notifications",
  "panel",
  "picker",
- "postage",
  "pretty_assertions",
  "project",
+ "recent_projects",
+ "remote",
  "schemars 1.0.4",
  "serde",
  "serde_json",
@@ -7115,7 +7266,7 @@ dependencies = [
 
 [[package]]
 name = "gpui"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -7123,6 +7274,7 @@ dependencies = [
  "async-task",
  "backtrace",
  "bindgen 0.71.1",
+ "bitflags 2.9.4",
  "blade-graphics",
  "blade-macros",
  "blade-util",
@@ -7141,7 +7293,7 @@ dependencies = [
  "core-video",
  "cosmic-text",
  "ctor",
- "derive_more",
+ "derive_more 0.99.20",
  "embed-resource",
  "env_logger 0.11.8",
  "etagere",
@@ -7202,6 +7354,7 @@ dependencies = [
  "wayland-cursor",
  "wayland-protocols 0.31.2",
  "wayland-protocols-plasma",
+ "wayland-protocols-wlr",
  "windows 0.61.3",
  "windows-core 0.61.2",
  "windows-numerics",
@@ -7640,7 +7793,7 @@ dependencies = [
  "async-fs",
  "async-tar",
  "bytes 1.10.1",
- "derive_more",
+ "derive_more 0.99.20",
  "futures 0.3.31",
  "http 1.3.1",
  "http-body 1.0.1",
@@ -8879,6 +9032,7 @@ dependencies = [
  "settings",
  "smol",
  "task",
+ "terminal",
  "text",
  "theme",
  "toml 0.8.23",
@@ -9353,7 +9507,7 @@ dependencies = [
 [[package]]
 name = "lsp-types"
 version = "0.95.1"
-source = "git+https://github.com/zed-industries/lsp-types?rev=0874f8742fe55b4dc94308c1e3c0069710d8eeaf#0874f8742fe55b4dc94308c1e3c0069710d8eeaf"
+source = "git+https://github.com/zed-industries/lsp-types?rev=b71ab4eeb27d9758be8092020a46fe33fbca4e33#b71ab4eeb27d9758be8092020a46fe33fbca4e33"
 dependencies = [
  "bitflags 1.3.2",
  "serde",
@@ -9526,6 +9680,7 @@ dependencies = [
  "settings",
  "theme",
  "ui",
+ "urlencoding",
  "util",
  "workspace",
 ]
@@ -9711,6 +9866,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "merge"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10bbef93abb1da61525bbc45eeaff6473a41907d19f8f9aa5168d214e10693e9"
+dependencies = [
+ "merge_derive",
+ "num-traits",
+]
+
+[[package]]
+name = "merge_derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "209d075476da2e63b4b29e72a2ef627b840589588e71400a25e3565c4f849d07"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "metal"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9736,7 +9913,7 @@ dependencies = [
  "pretty_assertions",
  "serde_json",
  "serde_json_lenient",
- "settings",
+ "settings_json",
  "streaming-iterator",
  "tree-sitter",
  "tree-sitter-json",
@@ -10238,11 +10415,10 @@ dependencies = [
 
 [[package]]
 name = "notify"
-version = "8.0.0"
-source = "git+https://github.com/zed-industries/notify.git?rev=bbb9ea5ae52b253e095737847e367c30653a2e96#bbb9ea5ae52b253e095737847e367c30653a2e96"
+version = "8.2.0"
+source = "git+https://github.com/zed-industries/notify.git?rev=b4588b2e5aee68f4c0e100f140e808cbce7b1419#b4588b2e5aee68f4c0e100f140e808cbce7b1419"
 dependencies = [
  "bitflags 2.9.4",
- "filetime",
  "fsevent-sys 4.1.0",
  "inotify 0.11.0",
  "kqueue",
@@ -10251,7 +10427,7 @@ dependencies = [
  "mio 1.1.0",
  "notify-types",
  "walkdir",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10268,7 +10444,7 @@ dependencies = [
 [[package]]
 name = "notify-types"
 version = "2.0.0"
-source = "git+https://github.com/zed-industries/notify.git?rev=bbb9ea5ae52b253e095737847e367c30653a2e96#bbb9ea5ae52b253e095737847e367c30653a2e96"
+source = "git+https://github.com/zed-industries/notify.git?rev=b4588b2e5aee68f4c0e100f140e808cbce7b1419#b4588b2e5aee68f4c0e100f140e808cbce7b1419"
 
 [[package]]
 name = "now"
@@ -10294,7 +10470,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10746,7 +10922,6 @@ dependencies = [
  "telemetry",
  "theme",
  "ui",
- "ui_input",
  "util",
  "vim_mode_setting",
  "workspace",
@@ -11344,7 +11519,7 @@ dependencies = [
 [[package]]
 name = "pet"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "clap",
  "env_logger 0.10.2",
@@ -11381,7 +11556,7 @@ dependencies = [
 [[package]]
 name = "pet-conda"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "env_logger 0.10.2",
  "lazy_static",
@@ -11400,7 +11575,7 @@ dependencies = [
 [[package]]
 name = "pet-core"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "clap",
  "lazy_static",
@@ -11415,7 +11590,7 @@ dependencies = [
 [[package]]
 name = "pet-env-var-path"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "lazy_static",
  "log",
@@ -11431,7 +11606,7 @@ dependencies = [
 [[package]]
 name = "pet-fs"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11440,7 +11615,7 @@ dependencies = [
 [[package]]
 name = "pet-global-virtualenvs"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11453,7 +11628,7 @@ dependencies = [
 [[package]]
 name = "pet-homebrew"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "lazy_static",
  "log",
@@ -11471,7 +11646,7 @@ dependencies = [
 [[package]]
 name = "pet-jsonrpc"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "env_logger 0.10.2",
  "log",
@@ -11484,7 +11659,7 @@ dependencies = [
 [[package]]
 name = "pet-linux-global-python"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11497,7 +11672,7 @@ dependencies = [
 [[package]]
 name = "pet-mac-commandlinetools"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11510,7 +11685,7 @@ dependencies = [
 [[package]]
 name = "pet-mac-python-org"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11523,7 +11698,7 @@ dependencies = [
 [[package]]
 name = "pet-mac-xcode"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11536,7 +11711,7 @@ dependencies = [
 [[package]]
 name = "pet-pipenv"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11549,7 +11724,7 @@ dependencies = [
 [[package]]
 name = "pet-pixi"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11561,7 +11736,7 @@ dependencies = [
 [[package]]
 name = "pet-poetry"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "base64 0.22.1",
  "lazy_static",
@@ -11582,7 +11757,7 @@ dependencies = [
 [[package]]
 name = "pet-pyenv"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "lazy_static",
  "log",
@@ -11600,7 +11775,7 @@ dependencies = [
 [[package]]
 name = "pet-python-utils"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "env_logger 0.10.2",
  "lazy_static",
@@ -11617,7 +11792,7 @@ dependencies = [
 [[package]]
 name = "pet-reporter"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "env_logger 0.10.2",
  "log",
@@ -11631,7 +11806,7 @@ dependencies = [
 [[package]]
 name = "pet-telemetry"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "env_logger 0.10.2",
  "lazy_static",
@@ -11646,7 +11821,7 @@ dependencies = [
 [[package]]
 name = "pet-venv"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11658,7 +11833,7 @@ dependencies = [
 [[package]]
 name = "pet-virtualenv"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11670,7 +11845,7 @@ dependencies = [
 [[package]]
 name = "pet-virtualenvwrapper"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "log",
  "msvc_spectre_libs",
@@ -11683,7 +11858,7 @@ dependencies = [
 [[package]]
 name = "pet-windows-registry"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "lazy_static",
  "log",
@@ -11701,7 +11876,7 @@ dependencies = [
 [[package]]
 name = "pet-windows-store"
 version = "0.1.0"
-source = "git+https://github.com/microsoft/python-environment-tools.git?rev=845945b830297a50de0e24020b980a65e4820559#845945b830297a50de0e24020b980a65e4820559"
+source = "git+https://github.com/microsoft/python-environment-tools.git?rev=e97b9508befa0062929da65a01054d25c4be861c#e97b9508befa0062929da65a01054d25c4be861c"
 dependencies = [
  "lazy_static",
  "log",
@@ -12701,6 +12876,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-error"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
+dependencies = [
+ "proc-macro-error-attr",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "version_check",
+]
+
+[[package]]
+name = "proc-macro-error-attr"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "version_check",
+]
+
+[[package]]
 name = "proc-macro-error-attr2"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12826,7 +13025,6 @@ dependencies = [
  "settings",
  "sha2",
  "shellexpand 2.1.2",
- "shlex",
  "smallvec",
  "smol",
  "snippet",
@@ -12939,7 +13137,6 @@ dependencies = [
  "paths",
  "rope",
  "serde",
- "serde_json",
  "text",
  "util",
  "uuid",
@@ -13283,7 +13480,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.1",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -13736,10 +13933,10 @@ dependencies = [
  "prost 0.9.0",
  "release_channel",
  "rpc",
+ "schemars 1.0.4",
  "serde",
  "serde_json",
  "settings",
- "shlex",
  "smol",
  "tempfile",
  "thiserror 2.0.17",
@@ -13779,6 +13976,7 @@ dependencies = [
  "gpui",
  "gpui_tokio",
  "http_client",
+ "image",
  "json_schema_store",
  "language",
  "language_extension",
@@ -13793,6 +13991,7 @@ dependencies = [
  "pretty_assertions",
  "project",
  "proto",
+ "rayon",
  "release_channel",
  "remote",
  "reqwest_client",
@@ -14126,7 +14325,6 @@ dependencies = [
  "log",
  "rand 0.9.2",
  "rayon",
- "smallvec",
  "sum_tree",
  "unicode-segmentation",
  "util",
@@ -14366,7 +14564,7 @@ dependencies = [
  "errno 0.3.14",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -14856,6 +15054,7 @@ dependencies = [
  "futures 0.3.31",
  "gpui",
  "language",
+ "lsp",
  "menu",
  "project",
  "schemars 1.0.4",
@@ -15124,6 +15323,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.11.4",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "serial2"
 version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15151,7 +15363,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "collections",
- "derive_more",
+ "derive_more 0.99.20",
  "ec4rs",
  "fs",
  "futures 0.3.31",
@@ -15159,6 +15371,7 @@ dependencies = [
  "indoc",
  "inventory",
  "log",
+ "migrator",
  "paths",
  "pretty_assertions",
  "release_channel",
@@ -15167,17 +15380,31 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_json_lenient",
- "serde_path_to_error",
  "serde_repr",
  "serde_with",
+ "settings_json",
  "settings_macros",
  "smallvec",
  "strum 0.27.2",
+ "unindent",
+ "util",
+ "zlog",
+]
+
+[[package]]
+name = "settings_json"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "serde_json_lenient",
+ "serde_path_to_error",
  "tree-sitter",
  "tree-sitter-json",
  "unindent",
  "util",
- "zlog",
 ]
 
 [[package]]
@@ -15229,14 +15456,17 @@ dependencies = [
  "menu",
  "node_runtime",
  "paths",
+ "picker",
  "pretty_assertions",
  "project",
+ "release_channel",
  "schemars 1.0.4",
  "search",
  "serde",
  "session",
  "settings",
  "strum 0.27.2",
+ "telemetry",
  "theme",
  "title_bar",
  "ui",
@@ -16278,7 +16508,7 @@ dependencies = [
  "editor",
  "file_icons",
  "gpui",
- "multi_buffer",
+ "language",
  "ui",
  "workspace",
 ]
@@ -16816,7 +17046,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -16944,7 +17174,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "collections",
- "derive_more",
+ "derive_more 0.99.20",
  "fs",
  "futures 0.3.31",
  "gpui",
@@ -17223,6 +17453,7 @@ dependencies = [
  "anyhow",
  "auto_update",
  "call",
+ "channel",
  "chrono",
  "client",
  "cloud_llm_client",
@@ -17824,7 +18055,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-gomod"
 version = "1.1.1"
-source = "git+https://github.com/camdencheek/tree-sitter-go-mod?rev=6efb59652d30e0e9cd5f3b3a669afd6f1a926d3c#6efb59652d30e0e9cd5f3b3a669afd6f1a926d3c"
+source = "git+https://github.com/camdencheek/tree-sitter-go-mod?rev=2e886870578eeba1927a2dc4bd2e2b3f598c5f9a#2e886870578eeba1927a2dc4bd2e2b3f598c5f9a"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -18149,10 +18380,8 @@ version = "0.1.0"
 dependencies = [
  "component",
  "editor",
- "fuzzy",
  "gpui",
  "menu",
- "picker",
  "settings",
  "theme",
  "ui",
@@ -18296,6 +18525,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7264e107f553ccae879d21fbea1d6724ac785e8c3bfc762137959b5802826ef3"
 
 [[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
 name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18389,6 +18624,7 @@ dependencies = [
  "itertools 0.14.0",
  "libc",
  "log",
+ "mach2 0.5.0",
  "nix 0.29.0",
  "pretty_assertions",
  "rand 0.9.2",
@@ -18561,6 +18797,7 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
+ "settings_ui",
  "task",
  "text",
  "theme",
@@ -19269,6 +19506,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wayland-protocols-wlr"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efd94963ed43cf9938a090ca4f7da58eb55325ec8200c3848963e98dc25b78ec"
+dependencies = [
+ "bitflags 2.9.4",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols 0.32.9",
+ "wayland-scanner",
+]
+
+[[package]]
 name = "wayland-scanner"
 version = "0.31.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -19498,7 +19748,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -20701,10 +20951,14 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "backtrace",
  "cargo_metadata",
  "cargo_toml",
  "clap",
+ "gh-workflow",
+ "indexmap 2.11.4",
  "indoc",
+ "serde",
  "toml 0.8.23",
  "toml_edit 0.22.27",
 ]
@@ -20889,7 +21143,7 @@ dependencies = [
 
 [[package]]
 name = "zed"
-version = "0.210.0"
+version = "0.213.0"
 dependencies = [
  "acp_tools",
  "activity_indicator",
@@ -20981,6 +21235,7 @@ dependencies = [
  "project_symbols",
  "prompt_store",
  "proto",
+ "rayon",
  "recent_projects",
  "release_channel",
  "remote",
@@ -21416,6 +21671,7 @@ dependencies = [
  "clock",
  "cloud_llm_client",
  "cloud_zeta2_prompt",
+ "collections",
  "edit_prediction",
  "edit_prediction_context",
  "feature_flags",
@@ -21426,6 +21682,7 @@ dependencies = [
  "language_model",
  "log",
  "lsp",
+ "open_ai",
  "pretty_assertions",
  "project",
  "release_channel",
@@ -21437,12 +21694,14 @@ dependencies = [
  "uuid",
  "workspace",
  "worktree",
+ "zlog",
 ]
 
 [[package]]
 name = "zeta2_tools"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "clap",
  "client",
@@ -21460,9 +21719,11 @@ dependencies = [
  "ordered-float 2.10.1",
  "pretty_assertions",
  "project",
+ "regex-syntax",
  "serde",
  "serde_json",
  "settings",
+ "telemetry",
  "text",
  "ui",
  "ui_input",
@@ -21490,6 +21751,7 @@ dependencies = [
  "futures 0.3.31",
  "gpui",
  "gpui_tokio",
+ "indoc",
  "language",
  "language_extension",
  "language_model",
@@ -21500,8 +21762,10 @@ dependencies = [
  "ordered-float 2.10.1",
  "paths",
  "polars",
+ "pretty_assertions",
  "project",
  "prompt_store",
+ "pulldown-cmark 0.12.2",
  "release_channel",
  "reqwest_client",
  "serde",
@@ -21511,6 +21775,7 @@ dependencies = [
  "smol",
  "soa-rs",
  "terminal_view",
+ "toml 0.8.23",
  "util",
  "watch",
  "zeta",

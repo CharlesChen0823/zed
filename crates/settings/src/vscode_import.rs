@@ -259,7 +259,7 @@ impl VsCodeSettings {
             gutter: self.gutter_content(),
             hide_mouse: None,
             horizontal_scroll_margin: None,
-            hover_popover_delay: self.read_u64("editor.hover.delay"),
+            hover_popover_delay: self.read_u64("editor.hover.delay").map(Into::into),
             hover_popover_enabled: self.read_bool("editor.hover.enabled"),
             inline_code_actions: None,
             jupyter: None,
@@ -275,7 +275,7 @@ impl VsCodeSettings {
             }),
             redact_private_values: None,
             relative_line_numbers: self.read_enum("editor.lineNumbers", |s| match s {
-                "relative" => Some(true),
+                "relative" => Some(RelativeLineNumbers::Enabled),
                 _ => None,
             }),
             rounded_selection: self.read_bool("editor.roundedSelection"),
@@ -299,6 +299,7 @@ impl VsCodeSettings {
             toolbar: None,
             use_smartcase_search: self.read_bool("search.smartCase"),
             vertical_scroll_margin: self.read_f32("editor.cursorSurroundingLines"),
+            completion_menu_scrollbar: None,
         }
     }
 
@@ -635,6 +636,7 @@ impl VsCodeSettings {
             show: self.read_bool("workbench.statusBar.visible"),
             active_language_button: None,
             cursor_position_button: None,
+            line_endings_button: None,
         })
     }
 
@@ -791,7 +793,8 @@ impl VsCodeSettings {
                     milliseconds: self
                         .read_value("files.autoSaveDelay")
                         .and_then(|v| v.as_u64())
-                        .unwrap_or(1000),
+                        .unwrap_or(1000)
+                        .into(),
                 }),
                 "onFocusChange" => Some(AutosaveSetting::OnFocusChange),
                 "onWindowChange" => Some(AutosaveSetting::OnWindowChange),
@@ -852,7 +855,8 @@ impl VsCodeSettings {
 
     fn worktree_settings_content(&self) -> WorktreeSettingsContent {
         WorktreeSettingsContent {
-            project_name: None,
+            project_name: crate::Maybe::Unset,
+            prevent_sharing_in_public_channels: false,
             file_scan_exclusions: self
                 .read_value("files.watcherExclude")
                 .and_then(|v| v.as_array())
@@ -872,6 +876,7 @@ impl VsCodeSettings {
                 })
                 .filter(|r| !r.is_empty()),
             private_files: None,
+            hidden_files: None,
         }
     }
 }

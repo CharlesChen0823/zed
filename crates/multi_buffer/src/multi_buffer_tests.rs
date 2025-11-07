@@ -7,6 +7,7 @@ use parking_lot::RwLock;
 use rand::prelude::*;
 use settings::SettingsStore;
 use std::env;
+use std::time::{Duration, Instant};
 use util::RandomCharIter;
 use util::rel_path::rel_path;
 use util::test::sample_text;
@@ -31,6 +32,7 @@ fn test_empty_singleton(cx: &mut App) {
             multibuffer_row: Some(MultiBufferRow(0)),
             diff_status: None,
             expand_info: None,
+            wrapped_buffer_row: None,
         }]
     );
 }
@@ -78,7 +80,9 @@ fn test_remote(cx: &mut App) {
         let ops = cx
             .background_executor()
             .block(host_buffer.read(cx).serialize_ops(None, cx));
-        let mut buffer = Buffer::from_proto(1, Capability::ReadWrite, state, None).unwrap();
+        let mut buffer =
+            Buffer::from_proto(ReplicaId::REMOTE_SERVER, Capability::ReadWrite, state, None)
+                .unwrap();
         buffer.apply_ops(
             ops.into_iter()
                 .map(|op| language::proto::deserialize_operation(op).unwrap()),
@@ -2429,6 +2433,8 @@ impl ReferenceMultibuffer {
                             buffer_id: region.buffer_id,
                             diff_status: region.status,
                             buffer_row,
+                            wrapped_buffer_row: None,
+
                             multibuffer_row: Some(MultiBufferRow(
                                 text[..ix].matches('\n').count() as u32
                             )),
@@ -2982,7 +2988,7 @@ fn test_history(cx: &mut App) {
     });
     let multibuffer = cx.new(|_| MultiBuffer::new(Capability::ReadWrite));
     multibuffer.update(cx, |this, _| {
-        this.history.group_interval = group_interval;
+        this.set_group_interval(group_interval);
     });
     multibuffer.update(cx, |multibuffer, cx| {
         multibuffer.push_excerpts(
@@ -3636,7 +3642,7 @@ fn assert_position_translation(snapshot: &MultiBufferSnapshot) {
 fn assert_line_indents(snapshot: &MultiBufferSnapshot) {
     let max_row = snapshot.max_point().row;
     let buffer_id = snapshot.excerpts().next().unwrap().1.remote_id();
-    let text = text::Buffer::new(0, buffer_id, snapshot.text());
+    let text = text::Buffer::new(ReplicaId::LOCAL, buffer_id, snapshot.text());
     let mut line_indents = text
         .line_indents_in_row_range(0..max_row + 1)
         .collect::<Vec<_>>();
