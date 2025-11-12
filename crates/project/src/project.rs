@@ -35,7 +35,6 @@ mod yarn;
 use dap::inline_value::{InlineValueLocation, VariableLookupKind, VariableScope};
 
 use crate::{
-    agent_server_store::AllAgentServersSettings,
     git_store::GitStore,
     lsp_store::{SymbolLocation, log_store::LogKind},
 };
@@ -101,9 +100,10 @@ use rpc::{
 };
 use search::{SearchInputKind, SearchQuery, SearchResult};
 use search_history::SearchHistory;
-use settings::{InvalidSettingsError, Settings, SettingsLocation, SettingsStore};
+use settings::{InvalidSettingsError, RegisterSetting, Settings, SettingsLocation, SettingsStore};
 use smol::channel::Receiver;
 use snippet::Snippet;
+pub use snippet_provider;
 use snippet_provider::SnippetProvider;
 use std::{
     borrow::Cow,
@@ -477,6 +477,12 @@ pub struct Completion {
     pub source: CompletionSource,
     /// A path to an icon for this completion that is shown in the menu.
     pub icon_path: Option<SharedString>,
+    /// Text starting here and ending at the cursor will be used as the query for filtering this completion.
+    ///
+    /// If None, the start of the surrounding word is used.
+    pub match_start: Option<text::Anchor>,
+    /// Key used for de-duplicating snippets. If None, always considered unique.
+    pub snippet_deduplication_key: Option<(usize, usize)>,
     /// Whether to adjust indentation (the default) or not.
     pub insert_text_mode: Option<InsertTextMode>,
     /// An optional callback to invoke when this completion is confirmed.
@@ -996,7 +1002,7 @@ pub enum PulledDiagnostics {
 /// Whether to disable all AI features in Zed.
 ///
 /// Default: false
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, RegisterSetting)]
 pub struct DisableAiSettings {
     pub disable_ai: bool,
 }
@@ -1010,16 +1016,8 @@ impl settings::Settings for DisableAiSettings {
 }
 
 impl Project {
-    pub fn init_settings(cx: &mut App) {
-        WorktreeSettings::register(cx);
-        ProjectSettings::register(cx);
-        DisableAiSettings::register(cx);
-        AllAgentServersSettings::register(cx);
-    }
-
     pub fn init(client: &Arc<Client>, cx: &mut App) {
         connection_manager::init(client.clone(), cx);
-        Self::init_settings(cx);
 
         let client: AnyProtoClient = client.clone().into();
         client.add_entity_message_handler(Self::handle_add_collaborator);
@@ -4069,7 +4067,7 @@ impl Project {
         result_rx
     }
 
-    fn find_search_candidate_buffers(
+    pub fn find_search_candidate_buffers(
         &mut self,
         query: &SearchQuery,
         limit: usize,
@@ -5652,6 +5650,15 @@ impl Completion {
     }
 
     /// Whether this completion is a snippet.
+    pub fn is_snippet_kind(&self) -> bool {
+        matches!(
+            &self.source,
+            CompletionSource::Lsp { lsp_completion, .. }
+            if lsp_completion.kind == Some(CompletionItemKind::SNIPPET)
+        )
+    }
+
+    /// Whether this completion is a snippet or snippet-style LSP completion.
     pub fn is_snippet(&self) -> bool {
         self.source
             // `lsp::CompletionListItemDefaults` has `insert_text_format` field
@@ -5759,7 +5766,6 @@ mod disable_ai_settings_tests {
     async fn test_disable_ai_settings_security(cx: &mut TestAppContext) {
         cx.update(|cx| {
             settings::init(cx);
-            Project::init_settings(cx);
 
             // Test 1: Default is false (AI enabled)
             assert!(

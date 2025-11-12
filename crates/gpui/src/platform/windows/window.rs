@@ -63,7 +63,7 @@ pub(crate) struct WindowsWindowInner {
     hwnd: HWND,
     drop_target_helper: IDropTargetHelper,
     pub(crate) state: RefCell<WindowsWindowState>,
-    pub(crate) system_settings: RefCell<WindowsSystemSettings>,
+    system_settings: RefCell<WindowsSystemSettings>,
     pub(crate) handle: AnyWindowHandle,
     pub(crate) hide_title_bar: bool,
     pub(crate) is_movable: bool,
@@ -321,6 +321,14 @@ impl WindowsWindowInner {
         }
         Ok(())
     }
+
+    pub(crate) fn system_settings(&self) -> std::cell::Ref<'_, WindowsSystemSettings> {
+        self.system_settings.borrow()
+    }
+
+    pub(crate) fn system_settings_mut(&self) -> std::cell::RefMut<'_, WindowsSystemSettings> {
+        self.system_settings.borrow_mut()
+    }
 }
 
 #[derive(Default)]
@@ -453,8 +461,9 @@ impl WindowsWindow {
 
         // Failure to create a `WindowsWindowState` can cause window creation to fail,
         // so check the inner result first.
-        let this = context.inner.take().unwrap()?;
+        let this = context.inner.take().transpose()?;
         let hwnd = creation_result?;
+        let this = this.unwrap();
 
         register_drag_drop(&this)?;
         configure_dwm_dark_mode(hwnd, appearance);
@@ -901,9 +910,9 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
                 if idata.u.hGlobal.is_invalid() {
                     return Ok(());
                 }
-                let hdrop = idata.u.hGlobal.0 as *mut HDROP;
+                let hdrop = HDROP(idata.u.hGlobal.0);
                 let mut paths = SmallVec::<[PathBuf; 2]>::new();
-                with_file_names(*hdrop, |file_name| {
+                with_file_names(hdrop, |file_name| {
                     if let Some(path) = PathBuf::from_str(&file_name).log_err() {
                         paths.push(path);
                     }
@@ -1167,8 +1176,7 @@ unsafe extern "system" fn window_procedure(
     lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_NCCREATE {
-        let window_params = lparam.0 as *const CREATESTRUCTW;
-        let window_params = unsafe { &*window_params };
+        let window_params = unsafe { &*(lparam.0 as *const CREATESTRUCTW) };
         let window_creation_context = window_params.lpCreateParams as *mut WindowCreateContext;
         let window_creation_context = unsafe { &mut *window_creation_context };
         return match WindowsWindowInner::new(window_creation_context, hwnd, window_params) {
