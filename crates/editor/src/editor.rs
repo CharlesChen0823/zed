@@ -117,8 +117,9 @@ use language::{
     AutoindentMode, BlockCommentConfig, BracketMatch, BracketPair, Buffer, BufferRow,
     BufferSnapshot, Capability, CharClassifier, CharKind, CharScopeContext, CodeLabel, CursorShape,
     DiagnosticEntryRef, DiffOptions, EditPredictionsMode, EditPreview, HighlightedText, IndentKind,
-    IndentSize, Language, OffsetRangeExt, OutlineItem, Point, Runnable, RunnableRange, Selection,
-    SelectionGoal, TextObject, TransactionId, TreeSitterOptions, WordsQuery,
+    IndentSize, Language, LanguageRegistry, OffsetRangeExt, OutlineItem, Point, Runnable,
+    RunnableRange, Selection, SelectionGoal, TextObject, TransactionId, TreeSitterOptions,
+    WordsQuery,
     language_settings::{
         self, LspInsertMode, RewrapBehavior, WordsCompletionMode, all_language_settings,
         language_settings,
@@ -371,6 +372,7 @@ pub trait DiagnosticRenderer {
         buffer_id: BufferId,
         snapshot: EditorSnapshot,
         editor: WeakEntity<Editor>,
+        language_registry: Option<Arc<LanguageRegistry>>,
         cx: &mut App,
     ) -> Vec<BlockProperties<Anchor>>;
 
@@ -379,6 +381,7 @@ pub trait DiagnosticRenderer {
         diagnostic_group: Vec<DiagnosticEntryRef<'_, Point>>,
         range: Range<Point>,
         buffer_id: BufferId,
+        language_registry: Option<Arc<LanguageRegistry>>,
         cx: &mut App,
     ) -> Option<Entity<markdown::Markdown>>;
 
@@ -1297,8 +1300,9 @@ struct SelectionHistoryEntry {
     add_selections_state: Option<AddSelectionsState>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 enum SelectionHistoryMode {
+    #[default]
     Normal,
     Undoing,
     Redoing,
@@ -1309,12 +1313,6 @@ enum SelectionHistoryMode {
 struct HoveredCursor {
     replica_id: ReplicaId,
     selection_id: usize,
-}
-
-impl Default for SelectionHistoryMode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 #[derive(Debug)]
@@ -7867,6 +7865,10 @@ impl Editor {
                 self.edit_prediction_preview,
                 EditPredictionPreview::Inactive { .. }
             ) {
+                if let Some(provider) = self.edit_prediction_provider.as_ref() {
+                    provider.provider.did_show(cx)
+                }
+
                 self.edit_prediction_preview = EditPredictionPreview::Active {
                     previous_scroll_position: None,
                     since: Instant::now(),
@@ -8046,6 +8048,9 @@ impl Editor {
                 && !self.edit_predictions_hidden_for_vim_mode;
 
             if show_completions_in_buffer {
+                if let Some(provider) = &self.edit_prediction_provider {
+                    provider.provider.did_show(cx);
+                }
                 if edits
                     .iter()
                     .all(|(range, _)| range.to_offset(&multibuffer).is_empty())
@@ -11060,6 +11065,10 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.breakpoint_store.is_none() {
+            return;
+        }
+
         for (anchor, breakpoint) in self.breakpoints_at_cursors(window, cx) {
             let breakpoint = breakpoint.unwrap_or_else(|| Breakpoint {
                 message: None,
@@ -11119,6 +11128,10 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.breakpoint_store.is_none() {
+            return;
+        }
+
         for (anchor, breakpoint) in self.breakpoints_at_cursors(window, cx) {
             let Some(breakpoint) = breakpoint.filter(|breakpoint| breakpoint.is_disabled()) else {
                 continue;
@@ -11138,6 +11151,10 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.breakpoint_store.is_none() {
+            return;
+        }
+
         for (anchor, breakpoint) in self.breakpoints_at_cursors(window, cx) {
             let Some(breakpoint) = breakpoint.filter(|breakpoint| breakpoint.is_enabled()) else {
                 continue;
@@ -11157,6 +11174,10 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.breakpoint_store.is_none() {
+            return;
+        }
+
         for (anchor, breakpoint) in self.breakpoints_at_cursors(window, cx) {
             if let Some(breakpoint) = breakpoint {
                 self.edit_breakpoint_at_anchor(
@@ -12564,6 +12585,7 @@ impl Editor {
         {
             let max_point = buffer.max_point();
             let mut is_first = true;
+            let mut prev_selection_was_entire_line = false;
             for selection in &mut selections {
                 let is_entire_line =
                     (selection.is_empty() && cut_no_selection_line) || self.selections.line_mode();
@@ -12578,9 +12600,10 @@ impl Editor {
                 }
                 if is_first {
                     is_first = false;
-                } else {
+                } else if !prev_selection_was_entire_line {
                     text += "\n";
                 }
+                prev_selection_was_entire_line = is_entire_line;
                 let mut len = 0;
                 for chunk in buffer.text_for_range(selection.start..selection.end) {
                     text.push_str(chunk);
@@ -12663,6 +12686,7 @@ impl Editor {
         {
             let max_point = buffer.max_point();
             let mut is_first = true;
+            let mut prev_selection_was_entire_line = false;
             for selection in &selections {
                 let mut start = selection.start;
                 let mut end = selection.end;
@@ -12721,9 +12745,10 @@ impl Editor {
                 for trimmed_range in trimmed_selections {
                     if is_first {
                         is_first = false;
-                    } else {
+                    } else if !prev_selection_was_entire_line {
                         text += "\n";
                     }
+                    prev_selection_was_entire_line = is_entire_line;
                     let mut len = 0;
                     for chunk in buffer.text_for_range(trimmed_range.start..trimmed_range.end) {
                         text.push_str(chunk);
@@ -12797,7 +12822,11 @@ impl Editor {
                             let end_offset = start_offset + clipboard_selection.len;
                             to_insert = &clipboard_text[start_offset..end_offset];
                             entire_line = clipboard_selection.is_entire_line;
-                            start_offset = end_offset + 1;
+                            start_offset = if entire_line {
+                                end_offset
+                            } else {
+                                end_offset + 1
+                            };
                             original_indent_column = Some(clipboard_selection.first_line_indent);
                         } else {
                             to_insert = &*clipboard_text;
@@ -17931,8 +17960,18 @@ impl Editor {
             .diagnostic_group(buffer_id, diagnostic.diagnostic.group_id)
             .collect::<Vec<_>>();
 
-        let blocks =
-            renderer.render_group(diagnostic_group, buffer_id, snapshot, cx.weak_entity(), cx);
+        let language_registry = self
+            .project()
+            .map(|project| project.read(cx).languages().clone());
+
+        let blocks = renderer.render_group(
+            diagnostic_group,
+            buffer_id,
+            snapshot,
+            cx.weak_entity(),
+            language_registry,
+            cx,
+        );
 
         let blocks = self.display_map.update(cx, |display_map, cx| {
             display_map.insert_blocks(blocks, cx).into_iter().collect()
