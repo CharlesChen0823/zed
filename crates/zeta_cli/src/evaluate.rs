@@ -54,7 +54,6 @@ pub async fn run_evaluate(
 
             let tasks = zetas.into_iter().enumerate().map(|(repetition_ix, zeta)| {
                 let repetition_ix = (args.repetitions > 1).then(|| repetition_ix as u16);
-
                 let example = example.clone();
                 let project = project.clone();
 
@@ -85,7 +84,7 @@ pub async fn run_evaluate(
     {
         write_aggregated_scores(&mut output_file, &all_results).log_err();
     };
-    print_run_data_dir(args.repetitions == 1);
+    print_run_data_dir(args.repetitions == 1, std::io::stdout().is_terminal());
 }
 
 fn write_aggregated_scores(
@@ -94,14 +93,17 @@ fn write_aggregated_scores(
 ) -> Result<()> {
     let mut successful = Vec::new();
     let mut failed_count = 0;
-    writeln!(w, "## Errors\n")?;
+
     for result in all_results.iter().flatten() {
         match result {
             Ok(eval_result) => successful.push(eval_result),
             Err((err, name, repetition_ix)) => {
+                if failed_count == 0 {
+                    writeln!(w, "## Errors\n")?;
+                }
+
                 failed_count += 1;
-                let err = err
-                    .to_string()
+                let err = format!("{err:?}")
                     .replace("<edits", "```xml\n<edits")
                     .replace("</edits>", "</edits>\n```");
                 writeln!(
@@ -114,22 +116,28 @@ fn write_aggregated_scores(
             }
         }
     }
-    let aggregated_result = EvaluationResult {
-        context: Scores::aggregate(successful.iter().map(|r| &r.context)),
-        edit_prediction: Scores::aggregate(successful.iter().map(|r| &r.edit_prediction)),
-    };
 
-    writeln!(w, "\n{}", "-".repeat(80))?;
-    writeln!(w, "\n## TOTAL SCORES")?;
-    writeln!(w, "\n### Success Rate")?;
-    writeln!(
-        w,
-        "\nCongratulations! {}/{} ({:.2}%) of runs weren't outright failures 🎉",
-        successful.len(),
-        successful.len() + failed_count,
-        (successful.len() as f64 / (successful.len() + failed_count) as f64) * 100.0
-    )?;
-    writeln!(w, "{}", aggregated_result)?;
+    if successful.len() > 1 {
+        let aggregated_result = EvaluationResult {
+            context: Scores::aggregate(successful.iter().map(|r| &r.context)),
+            edit_prediction: Scores::aggregate(successful.iter().map(|r| &r.edit_prediction)),
+        };
+
+        writeln!(w, "\n{}", "-".repeat(80))?;
+        writeln!(w, "\n## TOTAL SCORES")?;
+        writeln!(w, "\n### Success Rate")?;
+        writeln!(w, "{}", aggregated_result)?;
+    }
+
+    if successful.len() + failed_count > 1 {
+        writeln!(
+            w,
+            "\nCongratulations! {}/{} ({:.2}%) of runs weren't outright failures 🎉",
+            successful.len(),
+            successful.len() + failed_count,
+            (successful.len() as f64 / (successful.len() + failed_count) as f64) * 100.0
+        )?;
+    }
 
     Ok(())
 }
@@ -164,6 +172,7 @@ pub async fn run_evaluate_one(
             &predict_result,
             &evaluation_result,
             &mut std::io::stdout(),
+            std::io::stdout().is_terminal(),
         )?;
     }
 
@@ -175,6 +184,7 @@ pub async fn run_evaluate_one(
             &predict_result,
             &evaluation_result,
             &mut results_file,
+            false,
         )
         .log_err();
     }
@@ -187,18 +197,27 @@ fn write_eval_result(
     predictions: &PredictionDetails,
     evaluation_result: &EvaluationResult,
     out: &mut impl Write,
+    use_color: bool,
 ) -> Result<()> {
     writeln!(
         out,
         "## Expected edit prediction:\n\n```diff\n{}\n```\n",
-        compare_diffs(&example.example.expected_patch, &predictions.diff)
+        compare_diffs(
+            &example.example.expected_patch,
+            &predictions.diff,
+            use_color
+        )
     )?;
     writeln!(
         out,
         "## Actual edit prediction:\n\n```diff\n{}\n```\n",
-        compare_diffs(&predictions.diff, &example.example.expected_patch)
+        compare_diffs(
+            &predictions.diff,
+            &example.example.expected_patch,
+            use_color
+        )
     )?;
-    writeln!(out, "{}", evaluation_result)?;
+    writeln!(out, "{:#}", evaluation_result)?;
 
     anyhow::Ok(())
 }
@@ -294,6 +313,16 @@ False Negatives : {}",
 
 impl std::fmt::Display for EvaluationResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            self.fmt_table(f)
+        } else {
+            self.fmt_markdown(f)
+        }
+    }
+}
+
+impl EvaluationResult {
+    fn fmt_markdown(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             r#"
@@ -305,6 +334,38 @@ impl std::fmt::Display for EvaluationResult {
 "#,
             self.context.to_markdown(),
             self.edit_prediction.to_markdown()
+        )
+    }
+
+    fn fmt_table(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "### Scores\n")?;
+        writeln!(
+            f,
+            "                   TP     FP     FN     Precision   Recall     F1"
+        )?;
+        writeln!(
+            f,
+            "──────────────────────────────────────────────────────────────────"
+        )?;
+        writeln!(
+            f,
+            "Context Retrieval  {:<6} {:<6} {:<6} {:>10.2} {:>7.2} {:>7.2}",
+            self.context.true_positives,
+            self.context.false_positives,
+            self.context.false_negatives,
+            self.context.precision() * 100.0,
+            self.context.recall() * 100.0,
+            self.context.f1_score() * 100.0
+        )?;
+        writeln!(
+            f,
+            "Edit Prediction    {:<6} {:<6} {:<6} {:>10.2} {:>7.2} {:>7.2}",
+            self.edit_prediction.true_positives,
+            self.edit_prediction.false_positives,
+            self.edit_prediction.false_negatives,
+            self.edit_prediction.precision() * 100.0,
+            self.edit_prediction.recall() * 100.0,
+            self.edit_prediction.f1_score() * 100.0
         )
     }
 }
@@ -326,7 +387,7 @@ pub fn evaluate(example: &Example, preds: &PredictionDetails) -> EvaluationResul
     let mut false_positive_lines = actual_context_lines.clone();
 
     for entry in &example.expected_context {
-        let mut best_alternative_score = Scores::default();
+        let mut best_alternative_score: Option<Scores> = None;
 
         for alternative in &entry.alternatives {
             let expected: HashSet<_> = alternative
@@ -344,13 +405,17 @@ pub fn evaluate(example: &Example, preds: &PredictionDetails) -> EvaluationResul
 
             false_positive_lines.retain(|line| !actual_context_lines.contains(line));
 
-            if scores.recall() > best_alternative_score.recall() {
-                best_alternative_score = scores;
+            if best_alternative_score
+                .as_ref()
+                .is_none_or(|best| scores.recall() > best.recall())
+            {
+                best_alternative_score = Some(scores);
             }
         }
 
-        eval_result.context.false_negatives += best_alternative_score.false_negatives;
-        eval_result.context.true_positives += best_alternative_score.true_positives;
+        let best_alternative = best_alternative_score.unwrap_or_default();
+        eval_result.context.false_negatives += best_alternative.false_negatives;
+        eval_result.context.true_positives += best_alternative.true_positives;
     }
 
     eval_result.context.false_positives = false_positive_lines.len();
@@ -379,8 +444,7 @@ pub fn evaluate(example: &Example, preds: &PredictionDetails) -> EvaluationResul
 /// Return annotated `patch_a` so that:
 /// Additions and deletions that are not present in `patch_b` will be highlighted in red.
 /// Additions and deletions that are present in `patch_b` will be highlighted in green.
-pub fn compare_diffs(patch_a: &str, patch_b: &str) -> String {
-    let use_color = std::io::stdout().is_terminal();
+pub fn compare_diffs(patch_a: &str, patch_b: &str, use_color: bool) -> String {
     let green = if use_color { "\x1b[32m✓ " } else { "" };
     let red = if use_color { "\x1b[31m✗ " } else { "" };
     let neutral = if use_color { "  " } else { "" };
