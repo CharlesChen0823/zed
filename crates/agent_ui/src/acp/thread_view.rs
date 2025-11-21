@@ -591,9 +591,13 @@ impl AcpThreadView {
                             .connection()
                             .model_selector(thread.read(cx).session_id())
                             .map(|selector| {
+                                let agent_server = this.agent.clone();
+                                let fs = this.project.read(cx).fs().clone();
                                 cx.new(|cx| {
                                     AcpModelSelectorPopover::new(
                                         selector,
+                                        agent_server,
+                                        fs,
                                         PopoverMenuHandle::default(),
                                         this.focus_handle(cx),
                                         window,
@@ -5020,15 +5024,12 @@ impl AcpThreadView {
             }));
 
         let mut container = h_flex()
-            .id("thread-controls-container")
-            .group("thread-controls-container")
             .w_full()
             .py_2()
             .px_5()
             .gap_px()
             .opacity(0.6)
-            .hover(|style| style.opacity(1.))
-            .flex_wrap()
+            .hover(|s| s.opacity(1.))
             .justify_end();
 
         if AgentSettings::get_global(cx).enable_feedback
@@ -5038,23 +5039,13 @@ impl AcpThreadView {
         {
             let feedback = self.thread_feedback.feedback;
 
-            container = container
-                .child(
-                    div().visible_on_hover("thread-controls-container").child(
-                        Label::new(match feedback {
-                            Some(ThreadFeedback::Positive) => "Thanks for your feedback!",
-                            Some(ThreadFeedback::Negative) => {
-                                "We appreciate your feedback and will use it to improve."
-                            }
-                            None => {
-                                "Rating the thread sends all of your current conversation to the Zed team."
-                            }
-                        })
-                        .color(Color::Muted)
-                        .size(LabelSize::XSmall)
-                        .truncate(),
-                    ),
+            let tooltip_meta = || {
+                SharedString::new(
+                    "Rating the thread sends all of your current conversation to the Zed team.",
                 )
+            };
+
+            container = container
                 .child(
                     IconButton::new("feedback-thumbs-up", IconName::ThumbsUp)
                         .shape(ui::IconButtonShape::Square)
@@ -5063,7 +5054,12 @@ impl AcpThreadView {
                             Some(ThreadFeedback::Positive) => Color::Accent,
                             _ => Color::Ignored,
                         })
-                        .tooltip(Tooltip::text("Helpful Response"))
+                        .tooltip(move |window, cx| match feedback {
+                            Some(ThreadFeedback::Positive) => {
+                                Tooltip::text("Thanks for your feedback!")(window, cx)
+                            }
+                            _ => Tooltip::with_meta("Helpful Response", None, tooltip_meta(), cx),
+                        })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.handle_feedback_click(ThreadFeedback::Positive, window, cx);
                         })),
@@ -5076,7 +5072,16 @@ impl AcpThreadView {
                             Some(ThreadFeedback::Negative) => Color::Accent,
                             _ => Color::Ignored,
                         })
-                        .tooltip(Tooltip::text("Not Helpful"))
+                        .tooltip(move |window, cx| match feedback {
+                            Some(ThreadFeedback::Negative) => {
+                                Tooltip::text(
+                                    "We appreciate your feedback and will use it to improve in the future.",
+                                )(window, cx)
+                            }
+                            _ => {
+                                Tooltip::with_meta("Not Helpful Response", None, tooltip_meta(), cx)
+                            }
+                        })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.handle_feedback_click(ThreadFeedback::Negative, window, cx);
                         })),
@@ -6066,6 +6071,7 @@ pub(crate) mod tests {
     use acp_thread::StubAgentConnection;
     use agent_client_protocol::SessionId;
     use assistant_text_thread::TextThreadStore;
+    use editor::MultiBufferOffset;
     use fs::FakeFs;
     use gpui::{EventEmitter, SemanticVersion, TestAppContext, VisualTestContext};
     use project::Project;
@@ -7234,7 +7240,7 @@ pub(crate) mod tests {
                         Editor::for_buffer(buffer.clone(), Some(project.clone()), window, cx);
 
                     editor.change_selections(Default::default(), window, cx, |selections| {
-                        selections.select_ranges([8..15]);
+                        selections.select_ranges([MultiBufferOffset(8)..MultiBufferOffset(15)]);
                     });
 
                     editor
@@ -7296,7 +7302,7 @@ pub(crate) mod tests {
                         Editor::for_buffer(buffer.clone(), Some(project.clone()), window, cx);
 
                     editor.change_selections(Default::default(), window, cx, |selections| {
-                        selections.select_ranges([8..15]);
+                        selections.select_ranges([MultiBufferOffset(8)..MultiBufferOffset(15)]);
                     });
 
                     editor

@@ -2617,26 +2617,24 @@ dependencies = [
 
 [[package]]
 name = "calloop"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b99da2f8558ca23c71f4fd15dc57c906239752dd27ff3c00a1d56b685b7cbfec"
+version = "0.14.3"
+source = "git+https://github.com/zed-industries/calloop#eb6b4fd17b9af5ecc226546bdd04185391b3e265"
 dependencies = [
  "bitflags 2.9.4",
- "log",
  "polling",
- "rustix 0.38.44",
+ "rustix 1.1.2",
  "slab",
- "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
 name = "calloop-wayland-source"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95a66a987056935f7efce4ab5668920b5d0dac4a7c99991a67395f13702ddd20"
+checksum = "138efcf0940a02ebf0cc8d1eff41a1682a46b431630f4c52450d6265876021fa"
 dependencies = [
  "calloop",
- "rustix 0.38.44",
+ "rustix 1.1.2",
  "wayland-backend",
  "wayland-client",
 ]
@@ -3668,6 +3666,26 @@ dependencies = [
  "getrandom 0.2.16",
  "once_cell",
  "tiny-keccak",
+]
+
+[[package]]
+name = "const_format"
+version = "0.2.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7faa7469a93a566e9ccc1c73fe783b4a65c274c5ace346038dca9c39fe0030ad"
+dependencies = [
+ "const_format_proc_macros",
+]
+
+[[package]]
+name = "const_format_proc_macros"
+version = "0.2.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d57c2eccfb16dbac1f4e61e206105db5820c9d26c3c472bc17c774259ef7744"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -5316,13 +5334,13 @@ dependencies = [
  "serde_json",
  "settings",
  "supermaven",
- "sweep_ai",
  "telemetry",
  "theme",
  "ui",
  "workspace",
  "zed_actions",
  "zeta",
+ "zeta2",
 ]
 
 [[package]]
@@ -12755,6 +12773,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5da3b0203fd7ee5720aa0b5e790b591aa5d3f41c3ed2c34a3a393382198af2f7"
 
 [[package]]
+name = "pori"
+version = "0.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a63d338dec139f56dacc692ca63ad35a6be6a797442479b55acd611d79e906"
+dependencies = [
+ "nom 7.1.3",
+]
+
+[[package]]
 name = "portable-atomic"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13070,6 +13097,7 @@ dependencies = [
  "url",
  "util",
  "watch",
+ "wax",
  "which 6.0.3",
  "worktree",
  "zeroize",
@@ -14054,6 +14082,7 @@ dependencies = [
  "smol",
  "sysinfo 0.37.2",
  "task",
+ "theme",
  "thiserror 2.0.17",
  "toml 0.8.23",
  "unindent",
@@ -15107,6 +15136,7 @@ dependencies = [
  "language",
  "lsp",
  "menu",
+ "pretty_assertions",
  "project",
  "schemars 1.0.4",
  "serde",
@@ -16563,10 +16593,10 @@ checksum = "0193cc4331cfd2f3d2011ef287590868599a2f33c3e69bc22c1a3d3acf9e02fb"
 name = "svg_preview"
 version = "0.1.0"
 dependencies = [
- "editor",
  "file_icons",
  "gpui",
  "language",
+ "multi_buffer",
  "ui",
  "workspace",
 ]
@@ -16590,33 +16620,6 @@ dependencies = [
  "skrifa",
  "yazi",
  "zeno",
-]
-
-[[package]]
-name = "sweep_ai"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrayvec",
- "brotli",
- "client",
- "collections",
- "edit_prediction",
- "feature_flags",
- "futures 0.3.31",
- "gpui",
- "http_client",
- "indoc",
- "language",
- "project",
- "release_channel",
- "reqwest_client",
- "serde",
- "serde_json",
- "tree-sitter-rust",
- "util",
- "workspace",
- "zlog",
 ]
 
 [[package]]
@@ -19522,6 +19525,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "wax"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d12a78aa0bab22d2f26ed1a96df7ab58e8a93506a3e20adb47c51a93b4e1357"
+dependencies = [
+ "const_format",
+ "itertools 0.11.0",
+ "nom 7.1.3",
+ "pori",
+ "regex",
+ "thiserror 1.0.69",
+ "walkdir",
+]
+
+[[package]]
 name = "wayland-backend"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -21233,7 +21251,7 @@ dependencies = [
 
 [[package]]
 name = "zed"
-version = "0.214.0"
+version = "0.215.0"
 dependencies = [
  "acp_tools",
  "activity_indicator",
@@ -21345,7 +21363,6 @@ dependencies = [
  "snippets_ui",
  "supermaven",
  "svg_preview",
- "sweep_ai",
  "sysinfo 0.37.2",
  "system_specs",
  "tab_switcher",
@@ -21756,6 +21773,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrayvec",
+ "brotli",
  "chrono",
  "client",
  "clock",
