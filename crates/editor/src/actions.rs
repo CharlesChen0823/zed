@@ -370,7 +370,8 @@ actions!(
         AcceptEditPrediction,
         /// Accepts a partial edit prediction.
         #[action(deprecated_aliases = ["editor::AcceptPartialCopilotSuggestion"])]
-        AcceptPartialEditPrediction,
+        AcceptNextWordEditPrediction,
+        AcceptNextLineEditPrediction,
         /// Applies all diff hunks in the editor.
         ApplyAllDiffHunks,
         /// Applies the diff hunk at the current position.
@@ -680,6 +681,10 @@ actions!(
         ReloadFile,
         /// Rewraps text to fit within the preferred line length.
         Rewrap,
+        /// Rotates selections or lines backward.
+        RotateSelectionsBackward,
+        /// Rotates selections or lines forward.
+        RotateSelectionsForward,
         /// Runs flycheck diagnostics.
         RunFlycheck,
         /// Scrolls the cursor to the bottom of the viewport.

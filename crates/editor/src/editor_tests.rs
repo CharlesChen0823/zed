@@ -2218,10 +2218,9 @@ async fn test_move_start_of_paragraph_end_of_paragraph(cx: &mut TestAppContext) 
     init_test(cx, |_| {});
     let mut cx = EditorTestContext::new(cx).await;
 
-    let line_height = cx.editor(|editor, window, _| {
+    let line_height = cx.update_editor(|editor, window, cx| {
         editor
-            .style()
-            .unwrap()
+            .style(cx)
             .text
             .line_height_in_pixels(window.rem_size())
     });
@@ -2334,10 +2333,9 @@ async fn test_move_start_of_paragraph_end_of_paragraph(cx: &mut TestAppContext) 
 async fn test_scroll_page_up_page_down(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
     let mut cx = EditorTestContext::new(cx).await;
-    let line_height = cx.editor(|editor, window, _| {
+    let line_height = cx.update_editor(|editor, window, cx| {
         editor
-            .style()
-            .unwrap()
+            .style(cx)
             .text
             .line_height_in_pixels(window.rem_size())
     });
@@ -2400,8 +2398,7 @@ async fn test_autoscroll(cx: &mut TestAppContext) {
     let line_height = cx.update_editor(|editor, window, cx| {
         editor.set_vertical_scroll_margin(2, cx);
         editor
-            .style()
-            .unwrap()
+            .style(cx)
             .text
             .line_height_in_pixels(window.rem_size())
     });
@@ -2480,10 +2477,9 @@ async fn test_move_page_up_page_down(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
     let mut cx = EditorTestContext::new(cx).await;
 
-    let line_height = cx.editor(|editor, window, _cx| {
+    let line_height = cx.update_editor(|editor, window, cx| {
         editor
-            .style()
-            .unwrap()
+            .style(cx)
             .text
             .line_height_in_pixels(window.rem_size())
     });
@@ -5778,6 +5774,116 @@ fn test_duplicate_line(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn test_rotate_selections(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let mut cx = EditorTestContext::new(cx).await;
+
+    // Rotate text selections (horizontal)
+    cx.set_state("x=«1ˇ», y=«2ˇ», z=«3ˇ»");
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_forward(&RotateSelectionsForward, window, cx)
+    });
+    cx.assert_editor_state("x=«3ˇ», y=«1ˇ», z=«2ˇ»");
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_backward(&RotateSelectionsBackward, window, cx)
+    });
+    cx.assert_editor_state("x=«1ˇ», y=«2ˇ», z=«3ˇ»");
+
+    // Rotate text selections (vertical)
+    cx.set_state(indoc! {"
+        x=«1ˇ»
+        y=«2ˇ»
+        z=«3ˇ»
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_forward(&RotateSelectionsForward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        x=«3ˇ»
+        y=«1ˇ»
+        z=«2ˇ»
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_backward(&RotateSelectionsBackward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        x=«1ˇ»
+        y=«2ˇ»
+        z=«3ˇ»
+    "});
+
+    // Rotate text selections (vertical, different lengths)
+    cx.set_state(indoc! {"
+        x=\"«ˇ»\"
+        y=\"«aˇ»\"
+        z=\"«aaˇ»\"
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_forward(&RotateSelectionsForward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        x=\"«aaˇ»\"
+        y=\"«ˇ»\"
+        z=\"«aˇ»\"
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_backward(&RotateSelectionsBackward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        x=\"«ˇ»\"
+        y=\"«aˇ»\"
+        z=\"«aaˇ»\"
+    "});
+
+    // Rotate whole lines (cursor positions preserved)
+    cx.set_state(indoc! {"
+        ˇline123
+        liˇne23
+        line3ˇ
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_forward(&RotateSelectionsForward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        line3ˇ
+        ˇline123
+        liˇne23
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_backward(&RotateSelectionsBackward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        ˇline123
+        liˇne23
+        line3ˇ
+    "});
+
+    // Rotate whole lines, multiple cursors per line (positions preserved)
+    cx.set_state(indoc! {"
+        ˇliˇne123
+        ˇline23
+        ˇline3
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_forward(&RotateSelectionsForward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        ˇline3
+        ˇliˇne123
+        ˇline23
+    "});
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_backward(&RotateSelectionsBackward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        ˇliˇne123
+        ˇline23
+        ˇline3
+    "});
+}
+
+#[gpui::test]
 fn test_move_line_up_down(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
 
@@ -7644,10 +7750,12 @@ fn test_select_line(cx: &mut TestAppContext) {
             ])
         });
         editor.select_line(&SelectLine, window, cx);
+        // Adjacent line selections should NOT merge (only overlapping ones do)
         assert_eq!(
             display_ranges(editor, cx),
             vec![
-                DisplayPoint::new(DisplayRow(0), 0)..DisplayPoint::new(DisplayRow(2), 0),
+                DisplayPoint::new(DisplayRow(0), 0)..DisplayPoint::new(DisplayRow(1), 0),
+                DisplayPoint::new(DisplayRow(1), 0)..DisplayPoint::new(DisplayRow(2), 0),
                 DisplayPoint::new(DisplayRow(4), 0)..DisplayPoint::new(DisplayRow(5), 0),
             ]
         );
@@ -7666,9 +7774,13 @@ fn test_select_line(cx: &mut TestAppContext) {
 
     _ = editor.update(cx, |editor, window, cx| {
         editor.select_line(&SelectLine, window, cx);
+        // Adjacent but not overlapping, so they stay separate
         assert_eq!(
             display_ranges(editor, cx),
-            vec![DisplayPoint::new(DisplayRow(0), 0)..DisplayPoint::new(DisplayRow(5), 5)]
+            vec![
+                DisplayPoint::new(DisplayRow(0), 0)..DisplayPoint::new(DisplayRow(4), 0),
+                DisplayPoint::new(DisplayRow(4), 0)..DisplayPoint::new(DisplayRow(5), 5),
+            ]
         );
     });
 }
@@ -10755,6 +10867,115 @@ async fn test_autoclose_with_overrides(cx: &mut TestAppContext) {
         "#
         .unindent(),
     );
+}
+
+#[gpui::test]
+async fn test_autoclose_quotes_with_scope_awareness(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let mut cx = EditorTestContext::new(cx).await;
+    let language = languages::language("python", tree_sitter_python::LANGUAGE.into());
+
+    cx.update_buffer(|buffer, cx| buffer.set_language(Some(language), cx));
+
+    // Double quote inside single-quoted string
+    cx.set_state(indoc! {r#"
+        def main():
+            items = ['"', ˇ]
+    "#});
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("\"", window, cx);
+    });
+    cx.assert_editor_state(indoc! {r#"
+        def main():
+            items = ['"', "ˇ"]
+    "#});
+
+    // Two double quotes inside single-quoted string
+    cx.set_state(indoc! {r#"
+        def main():
+            items = ['""', ˇ]
+    "#});
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("\"", window, cx);
+    });
+    cx.assert_editor_state(indoc! {r#"
+        def main():
+            items = ['""', "ˇ"]
+    "#});
+
+    // Single quote inside double-quoted string
+    cx.set_state(indoc! {r#"
+        def main():
+            items = ["'", ˇ]
+    "#});
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("'", window, cx);
+    });
+    cx.assert_editor_state(indoc! {r#"
+        def main():
+            items = ["'", 'ˇ']
+    "#});
+
+    // Two single quotes inside double-quoted string
+    cx.set_state(indoc! {r#"
+        def main():
+            items = ["''", ˇ]
+    "#});
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("'", window, cx);
+    });
+    cx.assert_editor_state(indoc! {r#"
+        def main():
+            items = ["''", 'ˇ']
+    "#});
+
+    // Mixed quotes on same line
+    cx.set_state(indoc! {r#"
+        def main():
+            items = ['"""', "'''''", ˇ]
+    "#});
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("\"", window, cx);
+    });
+    cx.assert_editor_state(indoc! {r#"
+        def main():
+            items = ['"""', "'''''", "ˇ"]
+    "#});
+    cx.update_editor(|editor, window, cx| {
+        editor.move_right(&MoveRight, window, cx);
+    });
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input(", ", window, cx);
+    });
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("'", window, cx);
+    });
+    cx.assert_editor_state(indoc! {r#"
+        def main():
+            items = ['"""', "'''''", "", 'ˇ']
+    "#});
+}
+
+#[gpui::test]
+async fn test_autoclose_quotes_with_multibyte_characters(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let mut cx = EditorTestContext::new(cx).await;
+    let language = languages::language("python", tree_sitter_python::LANGUAGE.into());
+    cx.update_buffer(|buffer, cx| buffer.set_language(Some(language), cx));
+
+    cx.set_state(indoc! {r#"
+        def main():
+            items = ["🎉", ˇ]
+    "#});
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("\"", window, cx);
+    });
+    cx.assert_editor_state(indoc! {r#"
+        def main():
+            items = ["🎉", "ˇ"]
+    "#});
 }
 
 #[gpui::test]
@@ -16090,7 +16311,7 @@ async fn test_toggle_comment(cx: &mut TestAppContext) {
     cx.assert_editor_state(indoc! {"
         fn a() {
             «b();
-            c();
+            ˇ»«c();
             ˇ» d();
         }
     "});
@@ -16102,8 +16323,8 @@ async fn test_toggle_comment(cx: &mut TestAppContext) {
     cx.assert_editor_state(indoc! {"
         fn a() {
             // «b();
-            // c();
-            ˇ»//  d();
+            ˇ»// «c();
+            ˇ» // d();
         }
     "});
 
@@ -16112,7 +16333,7 @@ async fn test_toggle_comment(cx: &mut TestAppContext) {
         fn a() {
             // b();
             «// c();
-        ˇ»    //  d();
+        ˇ»     // d();
         }
     "});
 
@@ -16122,7 +16343,7 @@ async fn test_toggle_comment(cx: &mut TestAppContext) {
         fn a() {
             // b();
             «c();
-        ˇ»    //  d();
+        ˇ»     // d();
         }
     "});
 
@@ -22013,6 +22234,40 @@ async fn test_toggle_deletion_hunk_at_start_of_file(
 }
 
 #[gpui::test]
+async fn test_expand_first_line_diff_hunk_keeps_deleted_lines_visible(
+    executor: BackgroundExecutor,
+    cx: &mut TestAppContext,
+) {
+    init_test(cx, |_| {});
+    let mut cx = EditorTestContext::new(cx).await;
+
+    cx.set_state("ˇnew\nsecond\nthird\n");
+    cx.set_head_text("old\nsecond\nthird\n");
+    cx.update_editor(|editor, window, cx| {
+        editor.scroll(gpui::Point { x: 0., y: 0. }, None, window, cx);
+    });
+    executor.run_until_parked();
+    assert_eq!(cx.update_editor(|e, _, cx| e.scroll_position(cx)).y, 0.0);
+
+    // Expanding a diff hunk at the first line inserts deleted lines above the first buffer line.
+    cx.update_editor(|editor, window, cx| {
+        let snapshot = editor.snapshot(window, cx);
+        let excerpt_id = editor.buffer.read(cx).excerpt_ids()[0];
+        let hunks = editor
+            .diff_hunks_in_ranges(&[Anchor::min()..Anchor::max()], &snapshot.buffer_snapshot())
+            .collect::<Vec<_>>();
+        assert_eq!(hunks.len(), 1);
+        let hunk_range = Anchor::range_in_buffer(excerpt_id, hunks[0].buffer_range.clone());
+        editor.toggle_single_diff_hunk(hunk_range, cx)
+    });
+    executor.run_until_parked();
+    cx.assert_state_with_diff("- old\n+ ˇnew\n  second\n  third\n".to_string());
+
+    // Keep the editor scrolled to the top so the full hunk remains visible.
+    assert_eq!(cx.update_editor(|e, _, cx| e.scroll_position(cx)).y, 0.0);
+}
+
+#[gpui::test]
 async fn test_display_diff_hunks(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
 
@@ -27595,6 +27850,7 @@ async fn test_markdown_indents(cx: &mut gpui::TestAppContext) {
     cx.update_editor(|editor, window, cx| {
         editor.handle_input("x", window, cx);
     });
+    cx.run_until_parked();
     cx.assert_editor_state(indoc! {"
         - [ ] Item 1
             - [ ] Item 1.a
@@ -27610,8 +27866,7 @@ async fn test_markdown_indents(cx: &mut gpui::TestAppContext) {
             - [ ] Item 1.a
         - [x] Item 2
             - [x] Item 2.a
-            - [x] Item 2.bˇ
-        "
+            - [x] Item 2.bˇ"
     });
     cx.update_editor(|editor, window, cx| {
         editor.newline(&Newline, window, cx);
@@ -27622,34 +27877,41 @@ async fn test_markdown_indents(cx: &mut gpui::TestAppContext) {
         - [x] Item 2
             - [x] Item 2.a
             - [x] Item 2.b
-            ˇ
-        "
+            ˇ"
     });
 
     // Case 3: Test adding a new nested list item preserves indent
+    cx.set_state(&indoc! {"
+        - [ ] Item 1
+            - [ ] Item 1.a
+        - [x] Item 2
+            - [x] Item 2.a
+            - [x] Item 2.b
+            ˇ"
+    });
     cx.update_editor(|editor, window, cx| {
         editor.handle_input("-", window, cx);
     });
+    cx.run_until_parked();
     cx.assert_editor_state(indoc! {"
         - [ ] Item 1
             - [ ] Item 1.a
         - [x] Item 2
             - [x] Item 2.a
             - [x] Item 2.b
-            -ˇ
-        "
+            -ˇ"
     });
     cx.update_editor(|editor, window, cx| {
         editor.handle_input(" [x] Item 2.c", window, cx);
     });
+    cx.run_until_parked();
     cx.assert_editor_state(indoc! {"
         - [ ] Item 1
             - [ ] Item 1.a
         - [x] Item 2
             - [x] Item 2.a
             - [x] Item 2.b
-            - [x] Item 2.cˇ
-        "
+            - [x] Item 2.cˇ"
     });
 
     // Case 4: Test adding new line after nested ordered list preserves indent of previous line
@@ -27658,8 +27920,7 @@ async fn test_markdown_indents(cx: &mut gpui::TestAppContext) {
             1. Item 1.a
         2. Item 2
             1. Item 2.a
-            2. Item 2.bˇ
-        "
+            2. Item 2.bˇ"
     });
     cx.update_editor(|editor, window, cx| {
         editor.newline(&Newline, window, cx);
@@ -27670,60 +27931,81 @@ async fn test_markdown_indents(cx: &mut gpui::TestAppContext) {
         2. Item 2
             1. Item 2.a
             2. Item 2.b
-            ˇ
-        "
+            ˇ"
     });
 
     // Case 5: Adding new ordered list item preserves indent
+    cx.set_state(indoc! {"
+        1. Item 1
+            1. Item 1.a
+        2. Item 2
+            1. Item 2.a
+            2. Item 2.b
+            ˇ"
+    });
     cx.update_editor(|editor, window, cx| {
         editor.handle_input("3", window, cx);
     });
+    cx.run_until_parked();
     cx.assert_editor_state(indoc! {"
         1. Item 1
             1. Item 1.a
         2. Item 2
             1. Item 2.a
             2. Item 2.b
-            3ˇ
-        "
+            3ˇ"
     });
     cx.update_editor(|editor, window, cx| {
         editor.handle_input(".", window, cx);
     });
+    cx.run_until_parked();
     cx.assert_editor_state(indoc! {"
         1. Item 1
             1. Item 1.a
         2. Item 2
             1. Item 2.a
             2. Item 2.b
-            3.ˇ
-        "
+            3.ˇ"
     });
     cx.update_editor(|editor, window, cx| {
         editor.handle_input(" Item 2.c", window, cx);
     });
+    cx.run_until_parked();
     cx.assert_editor_state(indoc! {"
         1. Item 1
             1. Item 1.a
         2. Item 2
             1. Item 2.a
             2. Item 2.b
-            3. Item 2.cˇ
-        "
+            3. Item 2.cˇ"
     });
+
+    // Case 6: Test adding new line after nested ordered list preserves indent of previous line
+    cx.set_state(indoc! {"
+        - Item 1
+            - Item 1.a
+            - Item 1.a
+        ˇ"});
+    cx.update_editor(|editor, window, cx| {
+        editor.handle_input("-", window, cx);
+    });
+    cx.run_until_parked();
+    cx.assert_editor_state(indoc! {"
+        - Item 1
+            - Item 1.a
+            - Item 1.a
+        -ˇ"});
 
     // Case 7: Test blockquote newline preserves something
     cx.set_state(indoc! {"
-        > Item 1ˇ
-        "
+        > Item 1ˇ"
     });
     cx.update_editor(|editor, window, cx| {
         editor.newline(&Newline, window, cx);
     });
     cx.assert_editor_state(indoc! {"
         > Item 1
-        ˇ
-        "
+        ˇ"
     });
 }
 
@@ -28201,7 +28483,8 @@ async fn test_sticky_scroll(cx: &mut TestAppContext) {
     let mut sticky_headers = |offset: ScrollOffset| {
         cx.update_editor(|e, window, cx| {
             e.scroll(gpui::Point { x: 0., y: offset }, None, window, cx);
-            EditorElement::sticky_headers(&e, &e.snapshot(window, cx), cx)
+            let style = e.style(cx).clone();
+            EditorElement::sticky_headers(&e, &e.snapshot(window, cx), &style, cx)
                 .into_iter()
                 .map(
                     |StickyHeader {
@@ -28255,10 +28538,9 @@ async fn test_scroll_by_clicking_sticky_header(cx: &mut TestAppContext) {
     });
     let mut cx = EditorTestContext::new(cx).await;
 
-    let line_height = cx.editor(|editor, window, _cx| {
+    let line_height = cx.update_editor(|editor, window, cx| {
         editor
-            .style()
-            .unwrap()
+            .style(cx)
             .text
             .line_height_in_pixels(window.rem_size())
     });
