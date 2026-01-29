@@ -569,8 +569,8 @@ You can change the following settings to modify vim mode's behavior:
 | use_system_clipboard         | Determines how system clipboard is used:<br><ul><li>"always": use for all operations</li><li>"never": only use when explicitly specified</li><li>"on_yank": use for yank operations</li></ul> | "always"      |
 | use_multiline_find           | deprecated                                                                                                                                                                                    |
 | use_smartcase_find           | If `true`, `f` and `t` motions are case-insensitive when the target letter is lowercase.                                                                                                      | false         |
-| toggle_relative_line_numbers | deprecated                                                                                                                                                                                    | false         |
-| relative_line_numbers        | If "enabled", line numbers are relative in normal mode and absolute in insert mode, giving you the best of both options.                                                                      | "disabled"    |
+| gdefault                     | If `true`, the `:substitute` command replaces all matches in a line by default (as if `g` flag was given). The `g` flag then toggles this, replacing only the first match.                    | false         |
+| toggle_relative_line_numbers | If `true`, line numbers are relative in normal mode and absolute in insert mode, giving you the best of both options.                                                                         | false         |
 | custom_digraphs              | An object that allows you to add custom digraphs. Read below for an example.                                                                                                                  | {}            |
 | highlight_on_yank_duration   | The duration of the highlight animation(in ms). Set to `0` to disable                                                                                                                         | 200           |
 
@@ -594,6 +594,7 @@ Here's an example of these settings changed:
     "default_mode": "insert",
     "use_system_clipboard": "never",
     "use_smartcase_find": true,
+    "gdefault": true,
     "relative_line_numbers": "enabled",
     "highlight_on_yank_duration": 50,
     "custom_digraphs": {

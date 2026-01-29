@@ -1,22 +1,27 @@
-use anyhow::{Result, anyhow};
-use std::mem;
+use anyhow::Result;
 
-use crate::example::Example;
+use crate::{PredictionProvider, example::Example};
 
 pub async fn run_distill(example: &mut Example) -> Result<()> {
-    let [prediction]: [_; 1] =
-        mem::take(&mut example.predictions)
-            .try_into()
-            .map_err(|preds: Vec<_>| {
-                anyhow!(
-                    "Example has {} predictions, but it should have exactly one",
-                    preds.len()
-                )
-            })?;
+    let has_repair = example
+        .predictions
+        .iter()
+        .find(|p| p.provider == PredictionProvider::Repair);
+    let predictions = if let Some(has_repair) = has_repair {
+        vec![has_repair]
+    } else {
+        example.predictions.iter().collect()
+    };
 
-    example.spec.expected_patch = prediction.actual_patch;
+    let expected_patches = predictions
+        .into_iter()
+        .filter_map(|p| p.actual_patch.clone())
+        .collect();
+
+    example.spec.expected_patches = expected_patches;
     example.prompt = None;
     example.predictions = Vec::new();
     example.score = Vec::new();
+    example.qa = Vec::new();
     Ok(())
 }
