@@ -2,11 +2,12 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use editor::{Editor, EditorMode, MultiBuffer};
+use editor::{Editor, EditorMode, MultiBuffer, SizingBehavior};
 use futures::future::Shared;
 use gpui::{
-    App, Entity, EventEmitter, Focusable, Hsla, InteractiveElement, RetainAllImageCache,
-    StatefulInteractiveElement, Task, TextStyleRefinement, image_cache, prelude::*,
+    App, Entity, EventEmitter, Focusable, Hsla, InteractiveElement, KeyContext,
+    RetainAllImageCache, StatefulInteractiveElement, Task, TextStyleRefinement, image_cache,
+    prelude::*,
 };
 use language::{Buffer, Language, LanguageRegistry};
 use markdown::{Markdown, MarkdownElement, MarkdownStyle};
@@ -19,7 +20,8 @@ use util::ResultExt;
 
 use crate::{
     notebook::{CODE_BLOCK_INSET, GUTTER_WIDTH},
-    outputs::{Output, plain::TerminalOutput, user_error::ErrorView},
+    outputs::{Output, plain, plain::TerminalOutput, user_error::ErrorView},
+    repl_settings::ReplSettings,
 };
 
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
@@ -356,9 +358,10 @@ impl MarkdownCell {
 
         let editor = cx.new(|cx| {
             let mut editor = Editor::new(
-                EditorMode::AutoHeight {
-                    min_lines: 1,
-                    max_lines: Some(1024),
+                EditorMode::Full {
+                    scale_ui_elements_with_buffer_font_size: false,
+                    show_active_line_background: false,
+                    sizing_behavior: SizingBehavior::SizeByContent,
                 },
                 multi_buffer,
                 None,
@@ -377,6 +380,7 @@ impl MarkdownCell {
 
             editor.set_show_gutter(false, cx);
             editor.set_text_style_refinement(refinement);
+            editor.set_use_modal_editing(true);
             editor
         });
 
@@ -624,9 +628,10 @@ impl CodeCell {
 
         let editor_view = cx.new(|cx| {
             let mut editor = Editor::new(
-                EditorMode::AutoHeight {
-                    min_lines: 1,
-                    max_lines: Some(1024),
+                EditorMode::Full {
+                    scale_ui_elements_with_buffer_font_size: false,
+                    show_active_line_background: false,
+                    sizing_behavior: SizingBehavior::SizeByContent,
                 },
                 multi_buffer,
                 None,
@@ -645,6 +650,7 @@ impl CodeCell {
 
             editor.set_show_gutter(false, cx);
             editor.set_text_style_refinement(refinement);
+            editor.set_use_modal_editing(true);
             editor
         });
 
@@ -671,6 +677,18 @@ impl CodeCell {
         }
     }
 
+    pub fn set_language(&mut self, language: Option<Arc<Language>>, cx: &mut Context<Self>) {
+        self.editor.update(cx, |editor, cx| {
+            editor.buffer().update(cx, |buffer, cx| {
+                if let Some(buffer) = buffer.as_singleton() {
+                    buffer.update(cx, |buffer, cx| {
+                        buffer.set_language(language, cx);
+                    });
+                }
+            });
+        });
+    }
+
     /// Load a code cell from notebook file data, including existing outputs and execution count
     pub fn load(
         id: CellId,
@@ -687,9 +705,10 @@ impl CodeCell {
 
         let editor_view = cx.new(|cx| {
             let mut editor = Editor::new(
-                EditorMode::AutoHeight {
-                    min_lines: 1,
-                    max_lines: Some(1024),
+                EditorMode::Full {
+                    scale_ui_elements_with_buffer_font_size: false,
+                    show_active_line_background: false,
+                    sizing_behavior: SizingBehavior::SizeByContent,
                 },
                 multi_buffer,
                 None,
@@ -709,6 +728,7 @@ impl CodeCell {
             editor.set_text(source.clone(), window, cx);
             editor.set_show_gutter(false, cx);
             editor.set_text_style_refinement(refinement);
+            editor.set_use_modal_editing(true);
             editor
         });
 
@@ -1036,6 +1056,17 @@ impl RunnableCell for CodeCell {
 
 impl Render for CodeCell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let output_max_height = ReplSettings::get_global(cx).output_max_height_lines;
+        let output_max_height = if output_max_height > 0 {
+            Some(window.line_height() * output_max_height as f32)
+        } else {
+            None
+        };
+        let output_max_width = plain::max_width_for_columns(
+            ReplSettings::get_global(cx).output_max_width_columns,
+            window,
+            cx,
+        );
         // get the language from the editor's buffer
         let language_name = self
             .editor
@@ -1093,7 +1124,6 @@ impl Render for CodeCell {
                         ),
                     ),
             )
-            // Output portion
             .when(
                 self.has_outputs() || self.execution_duration.is_some() || self.is_executing,
                 |this| {
@@ -1189,6 +1219,9 @@ impl Render for CodeCell {
                                                             .into_any_element(),
                                                     ),
                                                     Output::Table { content, .. } => {
+                                                        Some(content.clone().into_any_element())
+                                                    }
+                                                    Output::Json { content, .. } => {
                                                         Some(content.clone().into_any_element())
                                                     }
                                                     Output::ErrorOutput(error_view) => {

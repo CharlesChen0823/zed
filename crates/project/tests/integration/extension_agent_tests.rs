@@ -2,8 +2,8 @@ use anyhow::Result;
 use collections::HashMap;
 use gpui::{AppContext, AsyncApp, SharedString, Task, TestAppContext};
 use node_runtime::NodeRuntime;
-use project::agent_server_store::*;
 use project::worktree_store::WorktreeStore;
+use project::{agent_server_store::*, worktree_store::WorktreeIdCounter};
 use std::{any::Any, path::PathBuf, sync::Arc};
 
 #[test]
@@ -25,21 +25,16 @@ struct NoopExternalAgent;
 impl ExternalAgentServer for NoopExternalAgent {
     fn get_command(
         &mut self,
-        _root_dir: Option<&str>,
         _extra_env: HashMap<String, String>,
         _status_tx: Option<watch::Sender<SharedString>>,
         _new_version_available_tx: Option<watch::Sender<Option<String>>>,
         _cx: &mut AsyncApp,
-    ) -> Task<Result<(AgentServerCommand, String, Option<task::SpawnInTerminal>)>> {
-        Task::ready(Ok((
-            AgentServerCommand {
-                path: PathBuf::from("noop"),
-                args: Vec::new(),
-                env: None,
-            },
-            "".to_string(),
-            None,
-        )))
+    ) -> Task<Result<AgentServerCommand>> {
+        Task::ready(Ok(AgentServerCommand {
+            path: PathBuf::from("noop"),
+            args: Vec::new(),
+            env: None,
+        }))
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -131,7 +126,8 @@ fn archive_launcher_constructs_with_all_fields() {
 async fn archive_agent_uses_extension_and_agent_id_for_cache_key(cx: &mut TestAppContext) {
     let fs = fs::FakeFs::new(cx.background_executor.clone());
     let http_client = http_client::FakeHttpClient::with_404_response();
-    let worktree_store = cx.new(|_| WorktreeStore::local(false, fs.clone()));
+    let worktree_store =
+        cx.new(|cx| WorktreeStore::local(false, fs.clone(), WorktreeIdCounter::get(cx)));
     let project_environment = cx.new(|cx| {
         crate::ProjectEnvironment::new(None, worktree_store.downgrade(), None, false, cx)
     });
@@ -212,7 +208,8 @@ async fn test_node_command_uses_managed_runtime(cx: &mut TestAppContext) {
     let fs = fs::FakeFs::new(cx.background_executor.clone());
     let http_client = http_client::FakeHttpClient::with_404_response();
     let node_runtime = NodeRuntime::unavailable();
-    let worktree_store = cx.new(|_| WorktreeStore::local(false, fs.clone()));
+    let worktree_store =
+        cx.new(|cx| WorktreeStore::local(false, fs.clone(), WorktreeIdCounter::get(cx)));
     let project_environment = cx.new(|cx| {
         crate::ProjectEnvironment::new(None, worktree_store.downgrade(), None, false, cx)
     });
@@ -255,7 +252,8 @@ async fn test_commands_run_in_extraction_directory(cx: &mut TestAppContext) {
     let fs = fs::FakeFs::new(cx.background_executor.clone());
     let http_client = http_client::FakeHttpClient::with_404_response();
     let node_runtime = NodeRuntime::unavailable();
-    let worktree_store = cx.new(|_| WorktreeStore::local(false, fs.clone()));
+    let worktree_store =
+        cx.new(|cx| WorktreeStore::local(false, fs.clone(), WorktreeIdCounter::get(cx)));
     let project_environment = cx.new(|cx| {
         crate::ProjectEnvironment::new(None, worktree_store.downgrade(), None, false, cx)
     });
@@ -298,26 +296,6 @@ async fn test_commands_run_in_extraction_directory(cx: &mut TestAppContext) {
 
 #[test]
 fn test_tilde_expansion_in_settings() {
-    let settings = settings::BuiltinAgentServerSettings {
-        path: Some(PathBuf::from("~/bin/agent")),
-        args: Some(vec!["--flag".into()]),
-        env: None,
-        ignore_system_version: None,
-        default_mode: None,
-        default_model: None,
-        favorite_models: vec![],
-        default_config_options: Default::default(),
-        favorite_config_option_values: Default::default(),
-    };
-
-    let BuiltinAgentServerSettings { path, .. } = settings.into();
-
-    let path = path.unwrap();
-    assert!(
-        !path.to_string_lossy().starts_with("~"),
-        "Tilde should be expanded for builtin agent path"
-    );
-
     let settings = settings::CustomAgentServerSettings::Custom {
         path: PathBuf::from("~/custom/agent"),
         args: vec!["serve".into()],
