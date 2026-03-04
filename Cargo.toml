@@ -45,6 +45,7 @@ members = [
     "crates/copilot_chat",
     "crates/crashes",
     "crates/credentials_provider",
+    "crates/csv_preview",
     "crates/dap",
     "crates/dap_adapters",
     "crates/db",
@@ -298,6 +299,7 @@ copilot_ui = { path = "crates/copilot_ui" }
 crashes = { path = "crates/crashes" }
 credentials_provider = { path = "crates/credentials_provider" }
 crossbeam = "0.8.4"
+csv_preview = { path = "crates/csv_preview"}
 dap = { path = "crates/dap" }
 dap_adapters = { path = "crates/dap_adapters" }
 db = { path = "crates/db" }
@@ -768,7 +770,7 @@ wax = "0.7"
 which = "6.0.0"
 wasm-bindgen = "0.2.113"
 web-time = "1.1.0"
-wgpu = "28.0"
+wgpu = { git = "https://github.com/zed-industries/wgpu", rev = "6e0c2546d99dad72ce6ffb5b04349e6a4ce96e6d" }
 windows-core = "0.61"
 yawc = "0.2.5"
 zeroize = "1.8"
@@ -813,6 +815,7 @@ features = [
     "Win32_System_Ole",
     "Win32_System_Performance",
     "Win32_System_Pipes",
+    "Win32_System_RestartManager",
     "Win32_System_SystemInformation",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
