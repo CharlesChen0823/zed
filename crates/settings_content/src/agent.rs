@@ -81,11 +81,14 @@ pub enum SidebarSide {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ThinkingBlockDisplay {
+    /// Thinking blocks fully expand during streaming, then auto-collapse
+    /// when the model finishes thinking. Users can re-expand after collapse.
+    #[default]
+    Auto,
     /// Thinking blocks auto-expand with a height constraint during streaming,
     /// then remain in their constrained state when complete. Users can click
     /// to fully expand or collapse.
-    #[default]
-    Automatic,
+    Preview,
     /// Thinking blocks are always fully expanded by default (no height constraint).
     AlwaysExpanded,
     /// Thinking blocks are always collapsed by default.
@@ -146,10 +149,6 @@ pub struct AgentSettingsContent {
     ///
     /// Default: write
     pub default_profile: Option<Arc<str>>,
-    /// Which view type to show by default in the agent panel.
-    ///
-    /// Default: "thread"
-    pub default_view: Option<DefaultAgentView>,
     /// Where new threads should start by default.
     ///
     /// Default: "local_project"
@@ -325,14 +324,6 @@ pub struct AgentProfileContent {
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom)]
 pub struct ContextServerPresetContent {
     pub tools: IndexMap<Arc<str>, bool>,
-}
-
-#[derive(Copy, Clone, Default, Debug, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom)]
-#[serde(rename_all = "snake_case")]
-pub enum DefaultAgentView {
-    #[default]
-    Thread,
-    TextThread,
 }
 
 #[derive(
