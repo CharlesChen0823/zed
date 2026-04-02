@@ -109,7 +109,7 @@ use {
     image::RgbaImage,
     project::{AgentId, Project},
     project_panel::ProjectPanel,
-    settings::{NotifyWhenAgentWaiting, Settings as _},
+    settings::{NotifyWhenAgentWaiting, PlaySoundWhenAgentDone, Settings as _},
     settings_ui::SettingsWindow,
     std::{
         any::Any,
@@ -231,7 +231,7 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
         agent_settings::AgentSettings::override_global(
             agent_settings::AgentSettings {
                 notify_when_agent_waiting: NotifyWhenAgentWaiting::Never,
-                play_sound_when_agent_done: false,
+                play_sound_when_agent_done: PlaySoundWhenAgentDone::Never,
                 ..agent_settings::AgentSettings::get_global(cx).clone()
             },
             cx,
@@ -2646,10 +2646,11 @@ fn run_multi_workspace_sidebar_visual_tests(
 
     cx.run_until_parked();
 
-    // Create the sidebar and register it on the MultiWorkspace
-    let sidebar = multi_workspace_window
-        .update(cx, |_multi_workspace, window, cx| {
-            let multi_workspace_handle = cx.entity();
+    // Create the sidebar outside the MultiWorkspace update to avoid a
+    // re-entrant read panic (Sidebar::new reads the MultiWorkspace).
+    let sidebar = cx
+        .update_window(multi_workspace_window.into(), |root_view, window, cx| {
+            let multi_workspace_handle: Entity<MultiWorkspace> = root_view.downcast().unwrap();
             cx.new(|cx| sidebar::Sidebar::new(multi_workspace_handle, window, cx))
         })
         .context("Failed to create sidebar")?;
@@ -3178,10 +3179,11 @@ edition = "2021"
 
     cx.run_until_parked();
 
-    // Create and register the workspace sidebar
-    let sidebar = workspace_window
-        .update(cx, |_multi_workspace, window, cx| {
-            let multi_workspace_handle = cx.entity();
+    // Create the sidebar outside the MultiWorkspace update to avoid a
+    // re-entrant read panic (Sidebar::new reads the MultiWorkspace).
+    let sidebar = cx
+        .update_window(workspace_window.into(), |root_view, window, cx| {
+            let multi_workspace_handle: Entity<MultiWorkspace> = root_view.downcast().unwrap();
             cx.new(|cx| sidebar::Sidebar::new(multi_workspace_handle, window, cx))
         })
         .context("Failed to create sidebar")?;
