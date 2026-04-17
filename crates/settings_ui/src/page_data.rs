@@ -63,7 +63,7 @@ macro_rules! concat_sections {
 
 pub(crate) fn settings_data(cx: &App) -> Vec<SettingsPage> {
     vec![
-        general_page(),
+        general_page(cx),
         appearance_page(),
         keymap_page(),
         editor_page(),
@@ -80,9 +80,9 @@ pub(crate) fn settings_data(cx: &App) -> Vec<SettingsPage> {
     ]
 }
 
-fn general_page() -> SettingsPage {
-    fn general_settings_section() -> [SettingsPageItem; 9] {
-        [
+fn general_page(cx: &App) -> SettingsPage {
+    fn general_settings_section(cx: &App) -> Vec<SettingsPageItem> {
+        let mut items = vec![
             SettingsPageItem::SectionHeader("General Settings"),
             SettingsPageItem::SettingItem(SettingItem {
                 files: PROJECT,
@@ -139,27 +139,6 @@ fn general_page() -> SettingsPage {
                     },
                 }),
                 metadata: None,
-                files: USER,
-            }),
-            SettingsPageItem::SettingItem(SettingItem {
-                title: "CLI Default Open Behavior",
-                description: "How `zed <path>` opens directories when no `-e` or `-n` flag is specified.",
-                field: Box::new(SettingField {
-                    json_path: Some("cli_default_open_behavior"),
-                    pick: |settings_content| {
-                        settings_content
-                            .workspace
-                            .cli_default_open_behavior
-                            .as_ref()
-                    },
-                    write: |settings_content, value| {
-                        settings_content.workspace.cli_default_open_behavior = value;
-                    },
-                }),
-                metadata: Some(Box::new(SettingsFieldMetadata {
-                    should_do_titlecase: Some(false),
-                    ..Default::default()
-                })),
                 files: USER,
             }),
             SettingsPageItem::SettingItem(SettingItem {
@@ -221,7 +200,34 @@ fn general_page() -> SettingsPage {
                 metadata: None,
                 files: USER,
             }),
-        ]
+        ];
+
+        use feature_flags::FeatureFlagAppExt;
+        if cx.has_flag::<feature_flags::AgentV2FeatureFlag>() {
+            items.push(SettingsPageItem::SettingItem(SettingItem {
+                title: "CLI Default Open Behavior",
+                description: "How `zed <path>` opens directories when no flag is specified.",
+                field: Box::new(SettingField {
+                    json_path: Some("cli_default_open_behavior"),
+                    pick: |settings_content| {
+                        settings_content
+                            .workspace
+                            .cli_default_open_behavior
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content.workspace.cli_default_open_behavior = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    should_do_titlecase: Some(false),
+                    ..Default::default()
+                })),
+                files: USER,
+            }));
+        }
+
+        items
     }
     fn security_section() -> [SettingsPageItem; 2] {
         [
@@ -391,13 +397,15 @@ fn general_page() -> SettingsPage {
     SettingsPage {
         title: "General",
         items: concat_sections!(
-            general_settings_section(),
+            @vec,
+            general_settings_section(cx),
             security_section(),
             workspace_restoration_section(),
             scoped_settings_section(),
             privacy_section(),
             auto_update_section(),
-        ),
+        )
+        .into(),
     }
 }
 
@@ -1885,7 +1893,7 @@ fn editor_page() -> SettingsPage {
         ]
     }
 
-    fn gutter_section() -> [SettingsPageItem; 8] {
+    fn gutter_section() -> [SettingsPageItem; 9] {
         [
             SettingsPageItem::SectionHeader("Gutter"),
             SettingsPageItem::SettingItem(SettingItem {
@@ -1965,6 +1973,29 @@ fn editor_page() -> SettingsPage {
                             .gutter
                             .get_or_insert_default()
                             .breakpoints = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Show Bookmarks",
+                description: "Show bookmarks in the gutter.",
+                field: Box::new(SettingField {
+                    json_path: Some("gutter.bookmarks"),
+                    pick: |settings_content| {
+                        settings_content
+                            .editor
+                            .gutter
+                            .as_ref()
+                            .and_then(|gutter| gutter.bookmarks.as_ref())
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .editor
+                            .gutter
+                            .get_or_insert_default()
+                            .bookmarks = value;
                     },
                 }),
                 metadata: None,
